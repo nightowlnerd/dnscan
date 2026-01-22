@@ -34,7 +34,7 @@ func readIPsFromFile(path string) ([]string, error) {
 }
 
 var (
-	version = "1.2.0"
+	version = "2.0.0"
 )
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
@@ -88,16 +88,21 @@ func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) 
 
 func main() {
 	// CLI flags
+	country := flag.String("country", "ir", "Country code for IP ranges (e.g., ir, cn)")
 	mode := flag.String("mode", "fast", "Scan mode: fast, medium, all, list")
 	workers := flag.Int("workers", 5000, "Number of concurrent workers")
 	timeout := flag.Duration("timeout", 2*time.Second, "DNS query timeout")
 	output := flag.String("output", "", "Output file (default: stdout)")
 	inputFile := flag.String("file", "", "Input file with DNS IPs (one per line)")
+	dataDir := flag.String("data-dir", "data", "Directory containing ranges/ and dns/ subdirs")
 	progress := flag.Bool("progress", true, "Show progress indicator")
 	domain := flag.String("domain", "", "Tunnel domain to verify (e.g., t.example.com). Required for slipstream compatibility.")
 	verify := flag.String("verify", "", "Path to slipstream-client binary to verify candidates actually work")
 	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
+
+	// Set data directory
+	DataDir = *dataDir
 
 	if *showVersion {
 		fmt.Printf("dns-scanner v%s\n", version)
@@ -137,18 +142,29 @@ func main() {
 		ips = IPsFromList(fileIPs)
 		totalIPs = len(fileIPs)
 	} else if *mode == "list" {
-		ips = IPsFromList(KnownDNSServers)
-		totalIPs = len(KnownDNSServers)
+		// Load known DNS servers for country
+		dnsList, err := LoadDNSList(*country)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load DNS list for %s: %v\n", *country, err)
+			os.Exit(1)
+		}
+		ips = IPsFromList(dnsList)
+		totalIPs = len(dnsList)
 	} else {
-		ranges := GetRanges(*mode)
-		totalIPs = CountIPs(ranges)
-		ips = ExpandRanges(ranges)
+		// Load IP ranges for country
+		ranges, err := LoadRanges(*country)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load ranges for %s: %v\n", *country, err)
+			os.Exit(1)
+		}
+		totalIPs = CountIPsWithMode(ranges, *mode)
+		ips = ExpandRangesWithMode(ranges, *mode)
 	}
 
 	// Print header
 	if *progress {
 		fmt.Fprintf(os.Stderr, "DNS Scanner v%s\n", version)
-		fmt.Fprintf(os.Stderr, "Mode: %s | Workers: %d | Timeout: %v\n", *mode, *workers, *timeout)
+		fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", *country, *mode, *workers, *timeout)
 		if *domain != "" {
 			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", *domain)
 		} else {
