@@ -1,6 +1,6 @@
 # dns-scanner
 
-Fast DNS scanner for finding working recursive resolvers that can reach a specific authoritative server. Built for DNS tunnel compatibility testing.
+Fast DNS scanner for finding working recursive resolvers. Supports country-specific IP ranges and DNS tunnel compatibility testing.
 
 ## Build
 
@@ -15,48 +15,72 @@ go build -o dns-scanner .
 ## Usage
 
 ```bash
-./dns-scanner --domain <tunnel-domain> [flags]
+./dns-scanner --country <code> --domain <tunnel-domain> [flags]
 ```
 
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--domain` | - | Tunnel domain to verify (required) |
+| `--country` | ir | Country code (ir, cn, etc.) |
+| `--domain` | - | Tunnel domain to verify |
 | `--mode` | fast | `list`, `fast`, `medium`, `all` |
 | `--workers` | 5000 | Concurrent workers |
 | `--timeout` | 2s | DNS query timeout |
 | `--file` | - | Custom DNS IP list |
+| `--data-dir` | data | Path to data directory |
 | `--output` | stdout | Output file |
 | `--progress` | true | Show progress |
-| `--verify` | - | Path to slipstream-client binary for actual verification |
+| `--verify` | - | Path to slipstream-client for verification |
 
 ## Modes
 
-| Mode | IPs | Description |
-|------|-----|-------------|
-| list | 170 | Known working DNS servers |
-| fast | ~12K | Priority Iranian ranges |
-| medium | ~30K | ISP ranges |
-| all | ~100K | Full scan |
+| Mode | Strategy | IPs per /24 |
+|------|----------|-------------|
+| list | Known DNS from `data/dns/<country>.txt` | - |
+| fast | Sample .1, .53, .254 | 3 |
+| medium | Sample .1, .2, .10, .53, .100, .200, .254 | 7 |
+| all | Every IP | 254 |
+
+## Data Files
+
+```
+data/
+  ranges/
+    ir.zone    # IP ranges from ipdeny.com
+    cn.zone
+  dns/
+    ir.txt     # Known working DNS servers
+    cn.txt
+```
+
+### Update IP Ranges
+
+```bash
+# Iran
+curl -o data/ranges/ir.zone https://www.ipdeny.com/ipblocks/data/aggregated/ir-aggregated.zone
+
+# China
+curl -o data/ranges/cn.zone https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone
+```
 
 ## Examples
 
 ```bash
 # Quick test with known servers
-./dns-scanner --domain t.example.com --mode list
+./dns-scanner --country ir --domain t.example.com --mode list
 
-# Broader scan
-./dns-scanner --domain t.example.com --mode fast --timeout 5s
+# Fast scan
+./dns-scanner --country ir --domain t.example.com --mode fast
 
-# Custom list, save results
-./dns-scanner --domain t.example.com --file my-dns.txt --output working.txt
+# Full scan with verification
+./dns-scanner --country ir --domain t.example.com --mode all --verify ./slipstream-client
 
-# Slow network: fewer workers, longer timeout
-./dns-scanner --domain t.example.com --mode fast --workers 2000 --timeout 10s
+# Custom list
+./dns-scanner --file my-dns.txt --domain t.example.com
 
-# Verify candidates actually work with slipstream
-./dns-scanner --domain t.example.com --mode list --verify ./slipstream-client
+# Different country
+./dns-scanner --country cn --domain t.example.com --mode fast
 ```
 
 ## Server Setup
@@ -66,5 +90,3 @@ Run a DNS responder on your authoritative server:
 ```bash
 dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 ```
-
-Scanner verifies DNS servers can reach your server by checking for successful A record response.
