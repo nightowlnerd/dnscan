@@ -21,27 +21,27 @@ jobs:
       - name: Build binaries
         run: |
           # Linux amd64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dns-scanner-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dnscan-linux-amd64 .
 
           # Linux arm64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dns-scanner-linux-arm64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dnscan-linux-arm64 .
 
           # macOS amd64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dns-scanner-darwin-amd64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dnscan-darwin-amd64 .
 
           # macOS arm64 (Apple Silicon)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dns-scanner-darwin-arm64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dnscan-darwin-arm64 .
 
           # Windows amd64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dns-scanner-windows-amd64.exe .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dnscan-windows-amd64.exe .
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dns-scanner-linux-amd64
-            dns-scanner-linux-arm64
-            dns-scanner-darwin-amd64
-            dns-scanner-darwin-arm64
-            dns-scanner-windows-amd64.exe
+            dnscan-linux-amd64
+            dnscan-linux-arm64
+            dnscan-darwin-amd64
+            dnscan-darwin-arm64
+            dnscan-windows-amd64.exe
           generate_release_notes: true

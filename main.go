@@ -105,7 +105,7 @@ func main() {
 	DataDir = *dataDir
 
 	if *showVersion {
-		fmt.Printf("dns-scanner v%s\n", version)
+		fmt.Printf("dnscan v%s\n", version)
 		os.Exit(0)
 	}
 
