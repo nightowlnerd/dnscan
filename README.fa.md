@@ -22,17 +22,17 @@
 </div>
 
 ```bash
-# دانلود و استخراج
-curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan.tar.gz
-tar xzf dnscan.tar.gz
+# دانلود و استخراج (Linux amd64)
+curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan-linux-amd64.tar.gz
+tar xzf dnscan-linux-amd64.tar.gz
 
 # اسکن سرورهای DNS ایران
-./dnscan-linux-amd64 --country ir --domain t.example.com --mode list
+./dnscan --country ir --domain t.example.com --mode list
 ```
 
 <div dir="rtl">
 
-**مهم:** پوشه `data/` باید در همان مسیر باینری باشد.
+**نکته:** فایل tarball شامل باینری `dnscan` و پوشه `data/` است.
 
 ## ساخت از سورس
 
