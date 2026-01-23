@@ -19,15 +19,15 @@ During internet restrictions, DNS tunnels (like [slipstream](https://github.com/
 ## Quick Start
 
 ```bash
-# Download and extract
-curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan.tar.gz
-tar xzf dnscan.tar.gz
+# Download and extract (Linux amd64)
+curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan-linux-amd64.tar.gz
+tar xzf dnscan-linux-amd64.tar.gz
 
 # Scan known Iranian DNS servers
-./dnscan-linux-amd64 --country ir --domain t.example.com --mode list
+./dnscan --country ir --domain t.example.com --mode list
 ```
 
-**Important:** The `data/` directory must be in the same folder as the binary.
+**Note:** Tarball includes `dnscan` binary + `data/` folder. Raw binaries (`dnscan-linux-amd64`, etc.) also available but require separate `data/` folder.
 
 ## Build from Source
 
