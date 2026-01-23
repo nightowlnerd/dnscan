@@ -35,6 +35,22 @@ jobs:
           # Windows amd64
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dnscan-windows-amd64.exe .
 
+      - name: Create tarballs with data
+        run: |
+          for arch in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            mkdir -p dist/$arch
+            cp dnscan-$arch dist/$arch/dnscan
+            chmod +x dist/$arch/dnscan
+            cp -r data dist/$arch/
+            tar -czvf dnscan-$arch.tar.gz -C dist/$arch .
+          done
+
+          # Windows zip with data
+          mkdir -p dist/windows-amd64
+          cp dnscan-windows-amd64.exe dist/windows-amd64/dnscan.exe
+          cp -r data dist/windows-amd64/
+          zip -r dnscan-windows-amd64.zip dist/windows-amd64
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -44,4 +60,9 @@ jobs:
             dnscan-darwin-amd64
             dnscan-darwin-arm64
             dnscan-windows-amd64.exe
+            dnscan-linux-amd64.tar.gz
+            dnscan-linux-arm64.tar.gz
+            dnscan-darwin-amd64.tar.gz
+            dnscan-darwin-arm64.tar.gz
+            dnscan-windows-amd64.zip
           generate_release_notes: true
