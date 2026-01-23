@@ -34,7 +34,7 @@ func readIPsFromFile(path string) ([]string, error) {
 }
 
 var (
-	version = "2.0.0"
+	version = "dev"
 )
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
@@ -105,7 +105,7 @@ func main() {
 	DataDir = *dataDir
 
 	if *showVersion {
-		fmt.Printf("dnscan v%s\n", version)
+		fmt.Printf("dnscan %s\n", version)
 		os.Exit(0)
 	}
 
@@ -163,7 +163,7 @@ func main() {
 
 	// Print header
 	if *progress {
-		fmt.Fprintf(os.Stderr, "DNS Scanner v%s\n", version)
+		fmt.Fprintf(os.Stderr, "dnscan %s\n", version)
 		fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", *country, *mode, *workers, *timeout)
 		if *domain != "" {
 			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", *domain)
