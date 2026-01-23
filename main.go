@@ -90,7 +90,7 @@ func main() {
 	// CLI flags
 	country := flag.String("country", "ir", "Country code for IP ranges (e.g., ir, cn)")
 	mode := flag.String("mode", "fast", "Scan mode: fast, medium, all, list")
-	workers := flag.Int("workers", 5000, "Number of concurrent workers")
+	workers := flag.Int("workers", 500, "Number of concurrent workers")
 	timeout := flag.Duration("timeout", 2*time.Second, "DNS query timeout")
 	output := flag.String("output", "", "Output file (default: stdout)")
 	inputFile := flag.String("file", "", "Input file with DNS IPs (one per line)")
