@@ -1,4 +1,4 @@
-module dns-scanner
+module github.com/nightowlnerd/dnscan
 
 go 1.25
 

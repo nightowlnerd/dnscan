@@ -1,4 +1,11 @@
-# dns-scanner
+# dnscan
+
+[![CI](https://github.com/nightowlnerd/dnscan/actions/workflows/ci.yml/badge.svg)](https://github.com/nightowlnerd/dnscan/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/nightowlnerd/dnscan)](https://github.com/nightowlnerd/dnscan/releases)
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**English** | [فارسی](README.fa.md)
 
 Find working DNS servers for DNS tunnels during internet blackouts. Scans country-specific IP ranges to find recursive resolvers that can reach your tunnel server.
 
@@ -13,11 +20,11 @@ During internet restrictions, DNS tunnels (like [slipstream](https://github.com/
 
 ```bash
 # Download and extract
-curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dns-scanner.tar.gz
-tar xzf dns-scanner.tar.gz
+curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan.tar.gz
+tar xzf dnscan.tar.gz
 
 # Scan known Iranian DNS servers
-./dns-scanner-linux-amd64 --country ir --domain t.example.com --mode list
+./dnscan-linux-amd64 --country ir --domain t.example.com --mode list
 ```
 
 **Important:** The `data/` directory must be in the same folder as the binary.
@@ -26,10 +33,10 @@ tar xzf dns-scanner.tar.gz
 
 ```bash
 # Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dns-scanner-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dnscan-linux-amd64 .
 
 # macOS
-go build -o dns-scanner .
+go build -o dnscan .
 ```
 
 ## Flags
@@ -60,22 +67,22 @@ go build -o dns-scanner .
 
 ```bash
 # Quick test - known DNS servers only
-./dns-scanner --country ir --domain t.example.com --mode list
+./dnscan --country ir --domain t.example.com --mode list
 
 # Broader scan - sample common DNS IPs
-./dns-scanner --country ir --domain t.example.com --mode fast
+./dnscan --country ir --domain t.example.com --mode fast
 
 # Full verification - test with actual tunnel client
-./dns-scanner --country ir --domain t.example.com --mode list --verify ./slipstream-client
+./dnscan --country ir --domain t.example.com --mode list --verify ./slipstream-client
 
 # Save results to file
-./dns-scanner --country ir --domain t.example.com --mode fast --output working-dns.txt
+./dnscan --country ir --domain t.example.com --mode fast --output working-dns.txt
 
 # Use custom IP list
-./dns-scanner --file my-servers.txt --domain t.example.com
+./dnscan --file my-servers.txt --domain t.example.com
 
 # Scan China ranges
-./dns-scanner --country cn --domain t.example.com --mode fast
+./dnscan --country cn --domain t.example.com --mode fast
 ```
 
 ## The --verify Flag
@@ -83,7 +90,7 @@ go build -o dns-scanner .
 By default, the scanner only checks if a DNS server responds. With `--verify`, it tests each candidate with the actual slipstream-client to confirm the tunnel works:
 
 ```bash
-./dns-scanner --domain t.example.com --mode list --verify ./slipstream-client
+./dnscan --domain t.example.com --mode list --verify ./slipstream-client
 ```
 
 Get slipstream-client from: https://github.com/Mygod/slipstream-rust/releases
