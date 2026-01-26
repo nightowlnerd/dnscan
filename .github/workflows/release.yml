@@ -57,11 +57,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dnscan-linux-amd64
-            dnscan-linux-arm64
-            dnscan-darwin-amd64
-            dnscan-darwin-arm64
-            dnscan-windows-amd64.exe
             dnscan-linux-amd64.tar.gz
             dnscan-linux-arm64.tar.gz
             dnscan-darwin-amd64.tar.gz
