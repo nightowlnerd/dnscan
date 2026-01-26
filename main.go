@@ -116,6 +116,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Validate --verify binary if provided
+	if *verify != "" {
+		info, err := os.Stat(*verify)
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Verify binary not found: %s\n", *verify)
+			os.Exit(1)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot access verify binary: %v\n", err)
+			os.Exit(1)
+		}
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "Verify path is a directory, not a binary: %s\n", *verify)
+			os.Exit(1)
+		}
+		if info.Mode()&0111 == 0 {
+			fmt.Fprintf(os.Stderr, "Verify binary is not executable: %s\nRun: chmod +x %s\n", *verify, *verify)
+			os.Exit(1)
+		}
+	}
+
 	// Setup output
 	var outFile *os.File
 	if *output != "" {
