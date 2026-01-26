@@ -2,6 +2,7 @@
 dnscan
 dnscan-*
 dist/
+tmp/
 dns-scanner
 dns-scanner-*
 *.exe
