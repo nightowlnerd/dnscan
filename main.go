@@ -279,6 +279,8 @@ resultLoop:
 		}
 
 		var verified []string
+		total := len(workingDNS)
+		width := len(fmt.Sprintf("%d", total))
 		for i, ip := range workingDNS {
 			// Check for interrupt
 			select {
@@ -291,12 +293,14 @@ resultLoop:
 			}
 
 			if *progress {
-				fmt.Fprintf(os.Stderr, "\r[%d/%d] Testing %s...   ", i+1, len(workingDNS), ip)
+				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 			}
+			start := time.Now()
 			if verifyWithSlipstream(*verify, *domain, ip, *timeout) {
+				elapsed := time.Since(start)
 				verified = append(verified, ip)
 				if *progress {
-					fmt.Fprintf(os.Stderr, "OK\n")
+					fmt.Fprintf(os.Stderr, "\033[32mOK\033[0m (%.1fs)\n", elapsed.Seconds())
 				}
 			} else {
 				if *progress {
