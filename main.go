@@ -39,14 +39,13 @@ var (
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
 func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) bool {
-	// Give extra time for connection attempt and error to appear
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*3)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, clientPath,
 		"--resolver", ip+":53",
 		"--domain", domain,
-		"--tcp-listen-port", "0", // Use random port
+		"--tcp-listen-port", "0", // Random available port
 	)
 
 	var output bytes.Buffer
@@ -57,32 +56,30 @@ func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) 
 		return false
 	}
 
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
+
 	// Poll for "Connection ready" (success) or errors (failure)
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
 		result := output.String()
 
-		// Success: tunnel actually connected
+		// Success: tunnel connected
 		if strings.Contains(result, "Connection ready") {
-			cmd.Process.Kill()
-			cmd.Wait()
 			return true
 		}
 
 		// Failure: connection error
 		if strings.Contains(result, "Connection closed") || strings.Contains(result, "became unavailable") {
-			cmd.Process.Kill()
-			cmd.Wait()
 			return false
 		}
 
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Timeout without success or failure = failure
-	cmd.Process.Kill()
-	cmd.Wait()
 	return false
 }
 
@@ -114,6 +111,27 @@ func main() {
 	if !validModes[*mode] {
 		fmt.Fprintf(os.Stderr, "Invalid mode: %s (use: fast, medium, all, list)\n", *mode)
 		os.Exit(1)
+	}
+
+	// Validate --verify binary if provided
+	if *verify != "" {
+		info, err := os.Stat(*verify)
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Verify binary not found: %s\n", *verify)
+			os.Exit(1)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot access verify binary: %v\n", err)
+			os.Exit(1)
+		}
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "Verify path is a directory, not a binary: %s\n", *verify)
+			os.Exit(1)
+		}
+		if info.Mode()&0111 == 0 {
+			fmt.Fprintf(os.Stderr, "Verify binary is not executable: %s\nRun: chmod +x %s\n", *verify, *verify)
+			os.Exit(1)
+		}
 	}
 
 	// Setup output
@@ -261,6 +279,8 @@ resultLoop:
 		}
 
 		var verified []string
+		total := len(workingDNS)
+		width := len(fmt.Sprintf("%d", total))
 		for i, ip := range workingDNS {
 			// Check for interrupt
 			select {
@@ -273,12 +293,14 @@ resultLoop:
 			}
 
 			if *progress {
-				fmt.Fprintf(os.Stderr, "\r[%d/%d] Testing %s...   ", i+1, len(workingDNS), ip)
+				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 			}
+			start := time.Now()
 			if verifyWithSlipstream(*verify, *domain, ip, *timeout) {
+				elapsed := time.Since(start)
 				verified = append(verified, ip)
 				if *progress {
-					fmt.Fprintf(os.Stderr, "OK\n")
+					fmt.Fprintf(os.Stderr, "\033[32mOK\033[0m (%.1fs)\n", elapsed.Seconds())
 				}
 			} else {
 				if *progress {
