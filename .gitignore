@@ -1,6 +1,7 @@
 # Binaries
 dnscan
 dnscan-*
+dist/
 dns-scanner
 dns-scanner-*
 *.exe
