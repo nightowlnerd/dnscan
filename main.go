@@ -39,14 +39,13 @@ var (
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
 func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) bool {
-	// Give extra time for connection attempt and error to appear
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*3)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, clientPath,
 		"--resolver", ip+":53",
 		"--domain", domain,
-		"--tcp-listen-port", "0", // Use random port
+		"--tcp-listen-port", "0", // Random available port
 	)
 
 	var output bytes.Buffer
@@ -57,32 +56,30 @@ func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) 
 		return false
 	}
 
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
+
 	// Poll for "Connection ready" (success) or errors (failure)
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
 		result := output.String()
 
-		// Success: tunnel actually connected
+		// Success: tunnel connected
 		if strings.Contains(result, "Connection ready") {
-			cmd.Process.Kill()
-			cmd.Wait()
 			return true
 		}
 
 		// Failure: connection error
 		if strings.Contains(result, "Connection closed") || strings.Contains(result, "became unavailable") {
-			cmd.Process.Kill()
-			cmd.Wait()
 			return false
 		}
 
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Timeout without success or failure = failure
-	cmd.Process.Kill()
-	cmd.Wait()
 	return false
 }
 
