@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,10 +13,51 @@ import (
 // DataDir is the directory containing ranges and dns files
 var DataDir = "data"
 
+const ipDenyURL = "https://www.ipdeny.com/ipblocks/data/aggregated/%s-aggregated.zone"
+
 // LoadRanges loads IP ranges from data/ranges/<country>.zone
+// Auto-downloads from ipdeny.com if not found locally
 func LoadRanges(country string) ([]string, error) {
 	path := filepath.Join(DataDir, "ranges", country+".zone")
+
+	// Check if file exists, download if not
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Downloading IP ranges for %s...\n", country)
+		if err := downloadRanges(country, path); err != nil {
+			return nil, fmt.Errorf("failed to download ranges for %s: %w", country, err)
+		}
+	}
+
 	return loadLines(path)
+}
+
+// downloadRanges fetches IP ranges from ipdeny.com
+func downloadRanges(country, destPath string) error {
+	url := fmt.Sprintf(ipDenyURL, country)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d - country '%s' may not exist", resp.StatusCode, country)
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+
+	f, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, resp.Body)
+	return err
 }
 
 // LoadDNSList loads known DNS servers from data/dns/<country>.txt
