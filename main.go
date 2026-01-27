@@ -182,7 +182,11 @@ func main() {
 	// Print header
 	if *progress {
 		fmt.Fprintf(os.Stderr, "dnscan %s\n", version)
-		fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", *country, *mode, *workers, *timeout)
+		if *inputFile != "" {
+			fmt.Fprintf(os.Stderr, "Source: %s | Workers: %d | Timeout: %v\n", *inputFile, *workers, *timeout)
+		} else {
+			fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", *country, *mode, *workers, *timeout)
+		}
 		if *domain != "" {
 			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", *domain)
 		} else {
@@ -269,7 +273,7 @@ resultLoop:
 		fmt.Fprintf(os.Stderr, "Found: %d DNS candidates\n", found)
 	}
 
-	// Verify with slipstream-client if requested
+	// Phase 2: Verify with slipstream-client if requested
 	if *verify != "" && len(workingDNS) > 0 {
 		if *progress {
 			fmt.Fprintf(os.Stderr, "\nVerifying %d candidates with slipstream-client...\n", len(workingDNS))
@@ -285,7 +289,7 @@ resultLoop:
 				if *progress {
 					fmt.Fprintf(os.Stderr, "\nInterrupted during verification\n")
 				}
-				goto done
+				goto slipstreamDone
 			default:
 			}
 
@@ -297,7 +301,7 @@ resultLoop:
 				elapsed := time.Since(start)
 				verified = append(verified, ip)
 				if *progress {
-					fmt.Fprintf(os.Stderr, "\033[32mOK\033[0m (%.1fs)\n", elapsed.Seconds())
+					fmt.Fprintf(os.Stderr, "\033[32mOK (%.1fs)\033[0m\n", elapsed.Seconds())
 				}
 			} else {
 				if *progress {
@@ -305,13 +309,61 @@ resultLoop:
 				}
 			}
 		}
-	done:
+	slipstreamDone:
 
 		if *progress {
 			fmt.Fprintf(os.Stderr, "---\n")
-			fmt.Fprintf(os.Stderr, "Verified: %d working with slipstream\n", len(verified))
+			fmt.Fprintf(os.Stderr, "Slipstream: %d/%d passed\n", len(verified), len(workingDNS))
 		}
 		workingDNS = verified
+	}
+
+	// Phase 3: Burst test to verify servers handle concurrent load
+	if *domain != "" && len(workingDNS) > 0 {
+		if *progress {
+			fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
+				len(workingDNS), BurstQueries, BurstMinSuccess)
+		}
+
+		var burstPassed []string
+		total := len(workingDNS)
+		width := len(fmt.Sprintf("%d", total))
+		for i, ip := range workingDNS {
+			// Check for interrupt
+			select {
+			case <-ctx.Done():
+				if *progress {
+					fmt.Fprintf(os.Stderr, "\nInterrupted during burst test\n")
+				}
+				goto burstDone
+			default:
+			}
+
+			if *progress {
+				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
+			}
+
+			result := BurstTest(ip, *domain, *timeout)
+
+			if result.Passed() {
+				burstPassed = append(burstPassed, ip)
+				if *progress {
+					fmt.Fprintf(os.Stderr, "\033[32mOK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
+						result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
+				}
+			} else {
+				if *progress {
+					fmt.Fprintf(os.Stderr, "FAIL %.0f%%\n", result.SuccessRate())
+				}
+			}
+		}
+	burstDone:
+
+		if *progress {
+			fmt.Fprintf(os.Stderr, "---\n")
+			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed\n", len(burstPassed), len(workingDNS))
+		}
+		workingDNS = burstPassed
 	}
 
 	// Write results
