@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -319,13 +320,13 @@ resultLoop:
 	}
 
 	// Phase 3: Burst test to verify servers handle concurrent load
+	var burstResults []*BurstResult
 	if *domain != "" && len(workingDNS) > 0 {
 		if *progress {
 			fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
 				len(workingDNS), BurstQueries, BurstMinSuccess)
 		}
 
-		var burstPassed []string
 		total := len(workingDNS)
 		width := len(fmt.Sprintf("%d", total))
 		for i, ip := range workingDNS {
@@ -346,10 +347,15 @@ resultLoop:
 			result := BurstTest(ip, *domain, *timeout)
 
 			if result.Passed() {
-				burstPassed = append(burstPassed, ip)
+				burstResults = append(burstResults, result)
 				if *progress {
-					fmt.Fprintf(os.Stderr, "\033[32mOK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
-						result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
+					// Green for >=85%, yellow for 70-84%
+					color := "\033[33m" // yellow
+					if result.SuccessRate() >= 85 {
+						color = "\033[32m" // green
+					}
+					fmt.Fprintf(os.Stderr, "%sOK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
+						color, result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
 				}
 			} else {
 				if *progress {
@@ -359,11 +365,21 @@ resultLoop:
 		}
 	burstDone:
 
+		// Sort by QPS descending (highest throughput first)
+		sort.Slice(burstResults, func(i, j int) bool {
+			return burstResults[i].QPS() > burstResults[j].QPS()
+		})
+
 		if *progress {
 			fmt.Fprintf(os.Stderr, "---\n")
-			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed\n", len(burstPassed), len(workingDNS))
+			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed (sorted by throughput)\n", len(burstResults), len(workingDNS))
 		}
-		workingDNS = burstPassed
+
+		// Extract sorted IPs
+		workingDNS = nil
+		for _, r := range burstResults {
+			workingDNS = append(workingDNS, r.IP)
+		}
 	}
 
 	// Write results
