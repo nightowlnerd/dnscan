@@ -32,7 +32,7 @@ tar xzf dnscan-linux-amd64.tar.gz
 
 <div dir="rtl">
 
-**نکته:** فایل tarball شامل باینری `dnscan` و پوشه `data/` است.
+**نکته:** فایل tarball شامل باینری `dnscan` و پوشه `data/` است. رنج‌های IP برای کشورهای جدید به صورت خودکار دانلود می‌شوند.
 
 ## ساخت از سورس
 
@@ -55,7 +55,7 @@ go build -o dnscan .
 | `--country` | ir | کد کشور (ir, cn, و غیره) |
 | `--domain` | - | دامنه تونل شما (مثلاً t.example.com) |
 | `--mode` | fast | حالت اسکن: `list`, `fast`, `medium`, `all` |
-| `--workers` | 5000 | تعداد workerهای همزمان |
+| `--workers` | 500 | تعداد workerهای همزمان |
 | `--timeout` | 2s | تایم‌اوت کوئری DNS |
 | `--file` | - | لیست IP سفارشی (هر خط یک IP) |
 | `--data-dir` | data | مسیر پوشه data |
@@ -110,7 +110,14 @@ go build -o dnscan .
 
 <div dir="rtl">
 
-دریافت slipstream-client از: https://github.com/Mygod/slipstream-rust/releases
+دریافت slipstream-client از: https://github.com/AliRezaBeigy/slipstream-rust-deploy/releases
+
+خروجی زمان اتصال هر سرور را نشان می‌دهد:
+```
+[1/5] 208.67.222.222   OK (0.4s)
+[2/5] 8.8.8.8          OK (0.2s)
+[3/5] 217.218.127.127  FAIL
+```
 
 ## فایل‌های داده
 
@@ -120,33 +127,28 @@ go build -o dnscan .
 data/
   ranges/
     ir.zone    # رنج‌های IP (بلوک‌های CIDR)
-    cn.zone
   dns/
     ir.txt     # سرورهای DNS شناخته‌شده
-    cn.txt
 ```
 
 <div dir="rtl">
 
-### بروزرسانی رنج‌های IP
+### دانلود خودکار رنج‌های IP
 
-رنج‌های IP از [ipdeny.com](https://www.ipdeny.com/ipblocks/) هستند. در صورت نیاز بروزرسانی کنید:
+رنج‌های IP به صورت خودکار از [ipdeny.com](https://www.ipdeny.com/ipblocks/) دانلود می‌شوند وقتی کشور جدیدی استفاده کنید:
 
 </div>
 
 ```bash
-# ایران
-curl -o data/ranges/ir.zone https://www.ipdeny.com/ipblocks/data/aggregated/ir-aggregated.zone
-
-# چین
-curl -o data/ranges/cn.zone https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone
+# اولین اجرا de.zone را دانلود می‌کند
+./dnscan --country de --domain t.example.com --mode fast
 ```
 
 <div dir="rtl">
 
 ### اضافه کردن DNS
 
-فایل `data/dns/<country>.txt` را ویرایش کنید تا سرورهای DNS که پیدا کرده‌اید را اضافه کنید:
+فایل `data/dns/<country>.txt` را ویرایش کنید (برای `--mode list` استفاده می‌شود):
 
 </div>
 
@@ -154,7 +156,6 @@ curl -o data/ranges/cn.zone https://www.ipdeny.com/ipblocks/data/aggregated/cn-a
 # data/dns/ir.txt
 185.8.174.140
 130.185.77.69
-# اضافه کنید...
 ```
 
 <div dir="rtl">
@@ -225,11 +226,11 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 - تایم‌اوت را افزایش دهید `--timeout 5s`
 
 **اسکن کند:**
-- workerها را کاهش دهید `--workers 2000`
+- workerها را کاهش دهید `--workers 200`
 - از `--mode list` یا `--mode fast` استفاده کنید
 
-**"Failed to load ranges":**
-- مطمئن شوید پوشه `data/` کنار باینری است
-- چک کنید `data/ranges/<country>.zone` وجود دارد
+**"Failed to download ranges":**
+- اتصال اینترنت را چک کنید
+- کد کشور ممکن است در ipdeny.com وجود نداشته باشد
 
 </div>
