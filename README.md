@@ -27,7 +27,7 @@ tar xzf dnscan-linux-amd64.tar.gz
 ./dnscan --country ir --domain t.example.com --mode list
 ```
 
-**Note:** Tarball includes `dnscan` binary + `data/` folder. Raw binaries (`dnscan-linux-amd64`, etc.) also available but require separate `data/` folder.
+**Note:** Tarball includes `dnscan` binary + `data/` folder.
 
 ## Build from Source
 
@@ -46,7 +46,7 @@ go build -o dnscan .
 | `--country` | ir | Country code (ir, cn, etc.) |
 | `--domain` | - | Your tunnel domain (e.g., t.example.com) |
 | `--mode` | fast | Scan mode: `list`, `fast`, `medium`, `all` |
-| `--workers` | 5000 | Concurrent workers |
+| `--workers` | 500 | Concurrent workers |
 | `--timeout` | 2s | DNS query timeout |
 | `--file` | - | Custom IP list (one per line) |
 | `--data-dir` | data | Path to data directory |
@@ -93,7 +93,14 @@ By default, the scanner only checks if a DNS server responds. With `--verify`, i
 ./dnscan --domain t.example.com --mode list --verify ./slipstream-client
 ```
 
-Get slipstream-client from: https://github.com/Mygod/slipstream-rust/releases
+Output shows connection time for each server:
+```
+[1/5] 208.67.222.222   OK (0.4s)
+[2/5] 8.8.8.8          OK (0.2s)
+[3/5] 217.218.127.127  FAIL
+```
+
+Get slipstream-client from: https://github.com/AliRezaBeigy/slipstream-rust-deploy/releases
 
 ## Data Files
 
@@ -101,33 +108,27 @@ Get slipstream-client from: https://github.com/Mygod/slipstream-rust/releases
 data/
   ranges/
     ir.zone    # IP ranges (CIDR blocks)
-    cn.zone
   dns/
     ir.txt     # Known working DNS servers
-    cn.txt
 ```
 
-### Update IP Ranges
+### Auto-download IP Ranges
 
-IP ranges are from [ipdeny.com](https://www.ipdeny.com/ipblocks/). Update when needed:
+IP ranges are auto-downloaded from [ipdeny.com](https://www.ipdeny.com/ipblocks/) when you use a new country:
 
 ```bash
-# Iran
-curl -o data/ranges/ir.zone https://www.ipdeny.com/ipblocks/data/aggregated/ir-aggregated.zone
-
-# China
-curl -o data/ranges/cn.zone https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone
+# First run auto-downloads de.zone
+./dnscan --country de --domain t.example.com --mode fast
 ```
 
 ### Add Known DNS
 
-Edit `data/dns/<country>.txt` to add DNS servers you've found working:
+Edit `data/dns/<country>.txt` to add DNS servers you've found working (used by `--mode list`):
 
 ```
 # data/dns/ir.txt
 185.8.174.140
 130.185.77.69
-# Add more...
 ```
 
 ## Server Setup
@@ -176,9 +177,9 @@ Use with slipstream:
 - Increase `--timeout 5s`
 
 **Slow scanning:**
-- Reduce `--workers 2000`
+- Reduce `--workers 200`
 - Use `--mode list` or `--mode fast`
 
-**"Failed to load ranges":**
-- Ensure `data/` directory is next to binary
-- Check `data/ranges/<country>.zone` exists
+**"Failed to download ranges":**
+- Check internet connection
+- Country code may not exist on ipdeny.com
