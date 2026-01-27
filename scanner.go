@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base32"
 	"encoding/hex"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,11 +13,26 @@ import (
 	"github.com/miekg/dns"
 )
 
+// Burst test parameters - tune these for accuracy vs speed tradeoff
+const (
+	BurstQueries      = 20  // Number of queries per burst test
+	BurstConcurrency  = 5   // Concurrent queries during burst
+	BurstMinSuccess   = 70  // Minimum success rate % to pass
+	BurstSubdomainLen = 32  // Bytes for random subdomain (32 = ~52 base32 chars)
+)
+
 // randomSubdomain generates a random subdomain prefix
 func randomSubdomain() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// randomSlipstreamSubdomain generates a subdomain similar to slipstream's Base32 encoding
+func randomSlipstreamSubdomain() string {
+	b := make([]byte, BurstSubdomainLen)
+	rand.Read(b)
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
 }
 
 // ScanResult holds the result of a DNS probe
@@ -175,4 +192,104 @@ func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult 
 	}()
 
 	return results
+}
+
+// BurstResult holds results from a burst test
+type BurstResult struct {
+	IP         string
+	Queries    int
+	Successful int
+	Failed     int
+	Latencies  []time.Duration
+	Duration   time.Duration
+}
+
+// SuccessRate returns percentage of successful queries
+func (r *BurstResult) SuccessRate() float64 {
+	if r.Queries == 0 {
+		return 0
+	}
+	return float64(r.Successful) / float64(r.Queries) * 100
+}
+
+// QPS returns queries per second
+func (r *BurstResult) QPS() float64 {
+	if r.Duration == 0 {
+		return 0
+	}
+	return float64(r.Successful) / r.Duration.Seconds()
+}
+
+// P50 returns median latency
+func (r *BurstResult) P50() time.Duration {
+	return r.percentile(50)
+}
+
+func (r *BurstResult) percentile(p int) time.Duration {
+	if len(r.Latencies) == 0 {
+		return 0
+	}
+	sorted := make([]time.Duration, len(r.Latencies))
+	copy(sorted, r.Latencies)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	idx := len(sorted) * p / 100
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
+}
+
+// Passed returns true if burst test meets minimum success rate
+func (r *BurstResult) Passed() bool {
+	return r.SuccessRate() >= BurstMinSuccess
+}
+
+// BurstTest runs concurrent DNS queries to test server reliability under load
+func BurstTest(ip, domain string, timeout time.Duration) *BurstResult {
+	result := &BurstResult{
+		IP:      ip,
+		Queries: BurstQueries,
+	}
+
+	client := &dns.Client{
+		Net:     "udp",
+		Timeout: timeout,
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, BurstConcurrency)
+
+	start := time.Now()
+
+	for i := 0; i < BurstQueries; i++ {
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			subdomain := randomSlipstreamSubdomain()
+			m := new(dns.Msg)
+			m.SetQuestion(dns.Fqdn(subdomain+"."+domain), dns.TypeTXT)
+			m.RecursionDesired = true
+			m.SetEdns0(1232, false)
+
+			_, rtt, err := client.Exchange(m, ip+":53")
+
+			mu.Lock()
+			if err != nil {
+				result.Failed++
+			} else {
+				result.Successful++
+				result.Latencies = append(result.Latencies, rtt)
+			}
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	result.Duration = time.Since(start)
+	return result
 }
