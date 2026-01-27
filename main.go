@@ -251,9 +251,6 @@ resultLoop:
 			}
 			if result.Working {
 				workingDNS = append(workingDNS, result.IP)
-				if outFile != nil {
-					fmt.Fprintln(outFile, result.IP)
-				}
 			}
 		}
 	}
@@ -317,13 +314,17 @@ resultLoop:
 		workingDNS = verified
 	}
 
-	// Print results to stdout if no output file
-	if outFile == nil && len(workingDNS) > 0 {
+	// Write results
+	if len(workingDNS) > 0 {
 		if *progress {
 			fmt.Fprintf(os.Stderr, "---\n")
 		}
 		for _, ip := range workingDNS {
-			fmt.Println(ip)
+			if outFile != nil {
+				fmt.Fprintln(outFile, ip)
+			} else {
+				fmt.Println(ip)
+			}
 		}
 	}
 
