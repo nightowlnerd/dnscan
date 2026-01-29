@@ -30,6 +30,8 @@ tar xzf dnscan-linux-amd64.tar.gz
 ./dnscan --country ir --domain t.example.com --mode list
 ```
 
+![dnscan screenshot](screenshot.jpg)
+
 <div dir="rtl">
 
 **نکته:** فایل tarball شامل باینری `dnscan` و پوشه `data/` است. رنج‌های IP برای کشورهای جدید به صورت خودکار دانلود می‌شوند.
