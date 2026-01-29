@@ -21,6 +21,8 @@
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # دانلود و استخراج (Linux amd64)
 curl -LO https://github.com/nightowlnerd/dnscan/releases/latest/download/dnscan-linux-amd64.tar.gz
@@ -29,6 +31,8 @@ tar xzf dnscan-linux-amd64.tar.gz
 # اسکن سرورهای DNS ایران
 ./dnscan --country ir --domain t.example.com --mode list
 ```
+
+</div>
 
 ![dnscan screenshot](screenshot.jpg)
 
@@ -40,6 +44,8 @@ tar xzf dnscan-linux-amd64.tar.gz
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # Linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dnscan-linux-amd64 .
@@ -47,6 +53,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dnscan-linux-
 # macOS
 go build -o dnscan .
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -78,6 +86,8 @@ go build -o dnscan .
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # تست سریع - فقط DNSهای شناخته‌شده
 ./dnscan --country ir --domain t.example.com --mode list
@@ -98,6 +108,8 @@ go build -o dnscan .
 ./dnscan --country cn --domain t.example.com --mode fast
 ```
 
+</div>
+
 <div dir="rtl">
 
 ## پرچم --verify
@@ -106,9 +118,13 @@ go build -o dnscan .
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 ./dnscan --domain t.example.com --mode list --verify ./slipstream-client
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -125,6 +141,8 @@ go build -o dnscan .
 
 </div>
 
+<div dir="ltr">
+
 ```
 data/
   ranges/
@@ -132,6 +150,8 @@ data/
   dns/
     ir.txt     # سرورهای DNS شناخته‌شده
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -141,10 +161,14 @@ data/
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # اولین اجرا de.zone را دانلود می‌کند
 ./dnscan --country de --domain t.example.com --mode fast
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -154,11 +178,15 @@ data/
 
 </div>
 
+<div dir="ltr">
+
 ```
 # data/dns/ir.txt
 185.8.174.140
 130.185.77.69
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -170,6 +198,8 @@ data/
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # روی سرور شما
 docker run -d --network host bashsiz/slipstream-rust slipstream-server \
@@ -178,16 +208,22 @@ docker run -d --network host bashsiz/slipstream-rust slipstream-server \
   --target-address 127.0.0.1:22
 ```
 
+</div>
+
 <div dir="rtl">
 
 برای تست بدون تونل (فقط چک کردن دسترسی DNS):
 
 </div>
 
+<div dir="ltr">
+
 ```bash
 # DNS responder ساده
 dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 ```
+
+</div>
 
 <div dir="rtl">
 
@@ -197,17 +233,23 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 
 </div>
 
+<div dir="ltr">
+
 ```
 185.8.174.140
 130.185.77.69
 217.218.127.127
 ```
 
+</div>
+
 <div dir="rtl">
 
 استفاده با slipstream:
 
 </div>
+
+<div dir="ltr">
 
 ```bash
 ./slipstream-client \
@@ -216,6 +258,8 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
   --domain t.example.com \
   --tcp-listen-port 7000
 ```
+
+</div>
 
 <div dir="rtl">
 
