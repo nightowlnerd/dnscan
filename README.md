@@ -27,6 +27,8 @@ tar xzf dnscan-linux-amd64.tar.gz
 ./dnscan --country ir --domain t.example.com --mode list
 ```
 
+![dnscan screenshot](screenshot.jpg)
+
 **Note:** Tarball includes `dnscan` binary + `data/` folder.
 
 ## Build from Source
