@@ -245,6 +245,7 @@ func main() {
 
 	// Collect results
 	var workingDNS []string
+	var suspiciousCount int
 resultLoop:
 	for {
 		select {
@@ -253,6 +254,9 @@ resultLoop:
 		case result, ok := <-results:
 			if !ok {
 				break resultLoop
+			}
+			if result.Suspicious {
+				suspiciousCount++
 			}
 			if result.Working {
 				workingDNS = append(workingDNS, result.IP)
@@ -272,6 +276,9 @@ resultLoop:
 		fmt.Fprintf(os.Stderr, "---\n")
 		fmt.Fprintf(os.Stderr, "Completed: %d IPs in %v\n", scanned, elapsed.Round(time.Millisecond))
 		fmt.Fprintf(os.Stderr, "Found: %d DNS candidates\n", found)
+		if suspiciousCount > 0 {
+			fmt.Fprintf(os.Stderr, "\033[33mWarning: %d servers returned private IPs (possible DNS hijacking)\033[0m\n", suspiciousCount)
+		}
 	}
 
 	// Phase 2: Verify with slipstream-client if requested

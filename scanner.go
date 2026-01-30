@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"encoding/hex"
+	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -15,10 +16,10 @@ import (
 
 // Burst test parameters - tune these for accuracy vs speed tradeoff
 const (
-	BurstQueries      = 20  // Number of queries per burst test
-	BurstConcurrency  = 5   // Concurrent queries during burst
-	BurstMinSuccess   = 70  // Minimum success rate % to pass
-	BurstSubdomainLen = 32  // Bytes for random subdomain (32 = ~52 base32 chars)
+	BurstQueries      = 20 // Number of queries per burst test
+	BurstConcurrency  = 5  // Concurrent queries during burst
+	BurstMinSuccess   = 70 // Minimum success rate % to pass
+	BurstSubdomainLen = 32 // Bytes for random subdomain (32 = ~52 base32 chars)
 )
 
 // randomSubdomain generates a random subdomain prefix
@@ -37,10 +38,34 @@ func randomSlipstreamSubdomain() string {
 
 // ScanResult holds the result of a DNS probe
 type ScanResult struct {
-	IP      string
-	Working bool
-	RTT     time.Duration
-	Error   error
+	IP         string
+	Working    bool
+	Suspicious bool
+	RTT        time.Duration
+	Error      error
+}
+
+// isPrivateIP detects DNS hijacking by checking if response IPs are in reserved ranges
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	privateRanges := []string{
+		"10.0.0.0/8",     // Common in corporate/ISP hijacking
+		"172.16.0.0/12",  // Often used by captive portals
+		"192.168.0.0/16", // Home routers sometimes hijack DNS
+		"127.0.0.0/8",    // Loopback, used to block domains
+		"169.254.0.0/16", // Link-local, indicates broken resolution
+		"100.64.0.0/10",  // CGNAT, ISP-level interception
+		"0.0.0.0/8",      // Invalid, used to sink traffic
+	}
+	for _, cidr := range privateRanges {
+		_, network, _ := net.ParseCIDR(cidr)
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // Scanner manages the worker pool for DNS probing
@@ -119,6 +144,14 @@ func (s *Scanner) Probe(ip string) ScanResult {
 	// Check for valid response with actual answer
 	if reply == nil || reply.Rcode != dns.RcodeSuccess || len(reply.Answer) == 0 {
 		return ScanResult{IP: ip, Working: false}
+	}
+
+	for _, ans := range reply.Answer {
+		if a, ok := ans.(*dns.A); ok {
+			if isPrivateIP(a.A) {
+				return ScanResult{IP: ip, Working: false, Suspicious: true}
+			}
+		}
 	}
 
 	// If verify domain is set, check if query reaches our authoritative server
