@@ -9,6 +9,13 @@
 
 Find working DNS servers for DNS tunnels during internet blackouts. Scans country-specific IP ranges to find recursive resolvers that can reach your tunnel server.
 
+## Features
+
+- 🧪 **Burst Testing** - Filters servers that respond to single queries but fail under real load (e.g., 1.1.1.1 shows 0% success)
+- 🛡️ **DNS Hijacking Detection** - Detects and warns when servers return private IPs
+- ⚡ **QPS Sorting** - Results sorted by throughput (queries per second)
+- 🎨 **Color Coding** - Green for ≥85% success, yellow for 70-84%
+
 ## Use Case
 
 During internet restrictions, DNS tunnels (like [slipstream](https://github.com/Mygod/slipstream-rust)) can bypass blocks by encoding traffic in DNS queries. This tool finds DNS servers that:
@@ -85,6 +92,20 @@ go build -o dnscan .
 
 # Scan China ranges
 ./dnscan --country cn --domain t.example.com --mode fast
+```
+
+## Burst Testing
+
+When `--domain` is specified, dnscan tests each candidate with 20 concurrent queries. This filters out servers like 1.1.1.1 that respond to single queries but fail under real slipstream load.
+
+Results are sorted by QPS (queries per second) - fastest servers listed first.
+
+## DNS Hijacking Detection
+
+If your ISP hijacks DNS (queries return private IPs like 10.x.x.x), dnscan rejects those servers and warns you:
+
+```
+Warning: 5 servers returned private IPs (possible DNS hijacking)
 ```
 
 ## The --verify Flag

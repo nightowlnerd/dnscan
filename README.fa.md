@@ -1,5 +1,3 @@
-<div dir="rtl">
-
 # dnscan
 
 [![CI](https://github.com/nightowlnerd/dnscan/actions/workflows/ci.yml/badge.svg)](https://github.com/nightowlnerd/dnscan/actions/workflows/ci.yml)
@@ -10,6 +8,13 @@
 
 پیدا کردن سرورهای DNS فعال برای تونل‌های DNS در زمان قطعی اینترنت. این ابزار رنج‌های IP کشورهای مختلف را اسکن می‌کند تا resolverهای بازگشتی که می‌توانند به سرور تونل شما برسند را پیدا کند.
 
+## ویژگی‌ها
+
+- 🧪 **تست Burst** - سرورهایی که فقط به یک کوئری جواب می‌دهند اما زیر بار واقعی fail می‌شوند را فیلتر می‌کند (مثل 1.1.1.1 که 0% موفقیت دارد)
+- 🛡️ **تشخیص DNS Hijacking** - سرورهایی که IP خصوصی برمی‌گردانند را شناسایی و هشدار می‌دهد
+- ⚡ **مرتب‌سازی بر اساس QPS** - نتایج بر اساس سرعت (queries per second) مرتب می‌شوند
+- 🎨 **رنگ‌بندی** - سبز برای ≥85% موفقیت، زرد برای 70-84%
+
 ## کاربرد
 
 در زمان محدودیت‌های اینترنتی، تونل‌های DNS (مثل [slipstream](https://github.com/Mygod/slipstream-rust)) می‌توانند با کدگذاری ترافیک در کوئری‌های DNS، محدودیت‌ها را دور بزنند. این ابزار سرورهای DNS را پیدا می‌کند که:
@@ -18,10 +23,6 @@
 3. واقعاً با کلاینت تونل شما کار کنند
 
 ## شروع سریع
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 # دانلود و استخراج (Linux amd64)
@@ -32,19 +33,11 @@ tar xzf dnscan-linux-amd64.tar.gz
 ./dnscan --country ir --domain t.example.com --mode list
 ```
 
-</div>
-
 ![dnscan screenshot](screenshot.jpg)
-
-<div dir="rtl">
 
 **نکته:** فایل tarball شامل باینری `dnscan` و پوشه `data/` است. رنج‌های IP برای کشورهای جدید به صورت خودکار دانلود می‌شوند.
 
 ## ساخت از سورس
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 # Linux
@@ -53,10 +46,6 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dnscan-linux-
 # macOS
 go build -o dnscan .
 ```
-
-</div>
-
-<div dir="rtl">
 
 ## پرچم‌ها
 
@@ -84,10 +73,6 @@ go build -o dnscan .
 
 ## مثال‌ها
 
-</div>
-
-<div dir="ltr">
-
 ```bash
 # تست سریع - فقط DNSهای شناخته‌شده
 ./dnscan --country ir --domain t.example.com --mode list
@@ -108,25 +93,27 @@ go build -o dnscan .
 ./dnscan --country cn --domain t.example.com --mode fast
 ```
 
-</div>
+## تست Burst
 
-<div dir="rtl">
+وقتی `--domain` مشخص شود، dnscan هر سرور کاندید را با 20 کوئری همزمان تست می‌کند. این کار سرورهایی مثل 1.1.1.1 را که به یک کوئری جواب می‌دهند اما زیر بار واقعی slipstream fail می‌شوند، فیلتر می‌کند.
+
+نتایج بر اساس QPS (queries per second) مرتب می‌شوند - سریع‌ترین سرورها اول نشان داده می‌شوند.
+
+## تشخیص DNS Hijacking
+
+اگر ISP شما DNS را hijack کرده باشد (کوئری‌ها به IP خصوصی مثل 10.x.x.x برمی‌گردند)، dnscan این سرورها را رد کرده و هشدار می‌دهد:
+
+```
+Warning: 5 servers returned private IPs (possible DNS hijacking)
+```
 
 ## پرچم --verify
 
 به صورت پیش‌فرض، اسکنر فقط چک می‌کند که آیا سرور DNS پاسخ می‌دهد. با `--verify`، هر کاندیدا را با slipstream-client واقعی تست می‌کند تا کارکرد تونل را تأیید کند:
 
-</div>
-
-<div dir="ltr">
-
 ```bash
 ./dnscan --domain t.example.com --mode list --verify ./slipstream-client
 ```
-
-</div>
-
-<div dir="rtl">
 
 دریافت slipstream-client از: https://github.com/AliRezaBeigy/slipstream-rust-deploy/releases
 
@@ -139,10 +126,6 @@ go build -o dnscan .
 
 ## فایل‌های داده
 
-</div>
-
-<div dir="ltr">
-
 ```
 data/
   ranges/
@@ -151,34 +134,18 @@ data/
     ir.txt     # سرورهای DNS شناخته‌شده
 ```
 
-</div>
-
-<div dir="rtl">
-
 ### دانلود خودکار رنج‌های IP
 
 رنج‌های IP به صورت خودکار از [ipdeny.com](https://www.ipdeny.com/ipblocks/) دانلود می‌شوند وقتی کشور جدیدی استفاده کنید:
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 # اولین اجرا de.zone را دانلود می‌کند
 ./dnscan --country de --domain t.example.com --mode fast
 ```
 
-</div>
-
-<div dir="rtl">
-
 ### اضافه کردن DNS
 
 فایل `data/dns/<country>.txt` را ویرایش کنید (برای `--mode list` استفاده می‌شود):
-
-</div>
-
-<div dir="ltr">
 
 ```
 # data/dns/ir.txt
@@ -186,19 +153,11 @@ data/
 130.185.77.69
 ```
 
-</div>
-
-<div dir="rtl">
-
 ## راه‌اندازی سرور
 
 قبل از اسکن، سرور تونل شما باید در حال اجرا باشد. اسکنر کوئری‌های DNS به دامنه شما می‌فرستد - اگر سرور در حال اجرا نباشد، همه سرورهای DNS ناموفق به نظر می‌رسند.
 
 برای slipstream:
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 # روی سرور شما
@@ -208,32 +167,16 @@ docker run -d --network host bashsiz/slipstream-rust slipstream-server \
   --target-address 127.0.0.1:22
 ```
 
-</div>
-
-<div dir="rtl">
-
 برای تست بدون تونل (فقط چک کردن دسترسی DNS):
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 # DNS responder ساده
 dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 ```
 
-</div>
-
-<div dir="rtl">
-
 ## خروجی
 
 سرورهای DNS فعال در stdout چاپ می‌شوند (هر خط یکی):
-
-</div>
-
-<div dir="ltr">
 
 ```
 185.8.174.140
@@ -241,15 +184,7 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 217.218.127.127
 ```
 
-</div>
-
-<div dir="rtl">
-
 استفاده با slipstream:
-
-</div>
-
-<div dir="ltr">
 
 ```bash
 ./slipstream-client \
@@ -258,10 +193,6 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
   --domain t.example.com \
   --tcp-listen-port 7000
 ```
-
-</div>
-
-<div dir="rtl">
 
 ## عیب‌یابی
 
@@ -278,5 +209,3 @@ dnsmasq --no-daemon --log-queries --address=/t.example.com/1.2.3.4
 **"Failed to download ranges":**
 - اتصال اینترنت را چک کنید
 - کد کشور ممکن است در ipdeny.com وجود نداشته باشد
-
-</div>
