@@ -214,7 +214,7 @@ func main() {
 
 	// Create scanner
 	prog := NewProgress(totalIPs, *progress)
-	scanner := NewScanner(*workers, *timeout, prog, *domain)
+	scanner := NewScanner(*workers, *timeout, 53, prog, *domain)
 
 	// Start progress ticker
 	var progressDone chan struct{}
@@ -351,7 +351,7 @@ resultLoop:
 				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 			}
 
-			result := BurstTest(ip, *domain, *timeout)
+			result := BurstTest(ip, *domain, 53, *timeout)
 
 			if result.Passed() {
 				burstResults = append(burstResults, result)

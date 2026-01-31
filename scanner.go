@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"sort"
 	"sync"
@@ -72,8 +73,9 @@ func isPrivateIP(ip net.IP) bool {
 type Scanner struct {
 	workers      int
 	timeout      time.Duration
+	port         int
 	progress     *Progress
-	verifyDomain string // If set, verify this domain can be resolved (for slipstream)
+	verifyDomain string
 }
 
 // Progress tracks scanning progress
@@ -114,10 +116,14 @@ func (p *Progress) Stats() (scanned, found, total int64, elapsed time.Duration) 
 }
 
 // NewScanner creates a new scanner with given workers and timeout
-func NewScanner(workers int, timeout time.Duration, progress *Progress, verifyDomain string) *Scanner {
+func NewScanner(workers int, timeout time.Duration, port int, progress *Progress, verifyDomain string) *Scanner {
+	if port == 0 {
+		port = 53
+	}
 	return &Scanner{
 		workers:      workers,
 		timeout:      timeout,
+		port:         port,
 		progress:     progress,
 		verifyDomain: verifyDomain,
 	}
@@ -136,7 +142,8 @@ func (s *Scanner) Probe(ip string) ScanResult {
 	m.SetQuestion(dns.Fqdn("google.com"), dns.TypeA)
 	m.RecursionDesired = true
 
-	reply, rtt, err := client.Exchange(m, ip+":53")
+	addr := fmt.Sprintf("%s:%d", ip, s.port)
+	reply, rtt, err := client.Exchange(m, addr)
 	if err != nil {
 		return ScanResult{IP: ip, Working: false, Error: err}
 	}
@@ -168,7 +175,7 @@ func (s *Scanner) Probe(ip string) ScanResult {
 		// Set EDNS0 with 1232 byte UDP payload (matches slipstream)
 		m2.SetEdns0(1232, false)
 
-		reply2, rtt2, err := client.Exchange(m2, ip+":53")
+		reply2, rtt2, err := client.Exchange(m2, addr)
 		if err != nil {
 			return ScanResult{IP: ip, Working: false, Error: err}
 		}
@@ -278,7 +285,12 @@ func (r *BurstResult) Passed() bool {
 }
 
 // BurstTest runs concurrent DNS queries to test server reliability under load
-func BurstTest(ip, domain string, timeout time.Duration) *BurstResult {
+func BurstTest(ip, domain string, port int, timeout time.Duration) *BurstResult {
+	if port == 0 {
+		port = 53
+	}
+	addr := fmt.Sprintf("%s:%d", ip, port)
+
 	result := &BurstResult{
 		IP:      ip,
 		Queries: BurstQueries,
@@ -309,7 +321,7 @@ func BurstTest(ip, domain string, timeout time.Duration) *BurstResult {
 			m.RecursionDesired = true
 			m.SetEdns0(1232, false)
 
-			_, rtt, err := client.Exchange(m, ip+":53")
+			_, rtt, err := client.Exchange(m, addr)
 
 			mu.Lock()
 			if err != nil {
