@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,5 +165,53 @@ func TestReadIPsFromFile(t *testing.T) {
 
 	if ips[0] != "192.168.1.1" || ips[1] != "10.0.0.1" {
 		t.Errorf("unexpected IPs: %v", ips)
+	}
+}
+
+func TestJSONOutputFlag(t *testing.T) {
+	inputFile, _ := os.CreateTemp("", "input-*.txt")
+	inputFile.WriteString("8.8.8.8\n")
+	inputFile.Close()
+	defer os.Remove(inputFile.Name())
+
+	cmd := exec.Command(binaryPath,
+		"--file", inputFile.Name(),
+		"--timeout", "100ms",
+		"--json",
+	)
+	out, _ := cmd.Output()
+
+	var result JSONOutput
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, out)
+	}
+
+	if result.Scan.TotalScanned != 1 {
+		t.Errorf("Expected total_scanned=1, got %d", result.Scan.TotalScanned)
+	}
+}
+
+func TestJSONOutputStructure(t *testing.T) {
+	inputFile, _ := os.CreateTemp("", "input-*.txt")
+	inputFile.WriteString("8.8.8.8\n")
+	inputFile.Close()
+	defer os.Remove(inputFile.Name())
+
+	cmd := exec.Command(binaryPath,
+		"--file", inputFile.Name(),
+		"--timeout", "100ms",
+		"--progress=false",
+		"--json",
+	)
+	out, _ := cmd.CombinedOutput()
+
+	if !strings.Contains(string(out), `"servers"`) {
+		t.Error("JSON output missing 'servers' field")
+	}
+	if !strings.Contains(string(out), `"scan"`) {
+		t.Error("JSON output missing 'scan' field")
+	}
+	if !strings.Contains(string(out), `"total_scanned"`) {
+		t.Error("JSON output missing 'total_scanned' field")
 	}
 }
