@@ -61,6 +61,7 @@ go build -o dnscan .
 | `--output` | stdout | ذخیره نتایج در فایل |
 | `--progress` | true | نمایش نوار پیشرفت |
 | `--verify` | - | مسیر باینری slipstream-client |
+| `--json` | false | خروجی به فرمت JSON |
 
 ## حالت‌های اسکن
 
