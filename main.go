@@ -221,6 +221,8 @@ func main() {
 		}
 		fmt.Fprintf(os.Stderr, "IPs to scan: %d\n", totalIPs)
 		fmt.Fprintf(os.Stderr, "---\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "Scanning %d IPs...\n", totalIPs)
 	}
 
 	// Setup context with signal handling
@@ -298,7 +300,6 @@ resultLoop:
 	if *progress {
 		scanned, found, _, elapsed := prog.Stats()
 		fmt.Fprintf(os.Stderr, "\r                                                              \r")
-		fmt.Fprintf(os.Stderr, "---\n")
 		fmt.Fprintf(os.Stderr, "Completed: %d IPs in %v\n", scanned, elapsed.Round(time.Millisecond))
 		fmt.Fprintf(os.Stderr, "Found: %d DNS candidates\n", found)
 		if suspiciousCount > 0 {
@@ -420,6 +421,7 @@ resultLoop:
 	// Write results
 	if *jsonOutput {
 		output := JSONOutput{
+			Servers: []JSONServer{},
 			Scan: JSONScan{
 				TotalScanned: scanned,
 				Found:        int64(len(workingDNS)),
