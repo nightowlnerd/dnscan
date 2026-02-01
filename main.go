@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -37,6 +38,29 @@ func readIPsFromFile(path string) ([]string, error) {
 var (
 	version = "dev"
 )
+
+// JSONOutput is the structured output format for --json flag
+type JSONOutput struct {
+	Servers []JSONServer `json:"servers"`
+	Scan    JSONScan     `json:"scan"`
+}
+
+// JSONServer represents a single DNS server in JSON output
+type JSONServer struct {
+	IP          string  `json:"ip"`
+	QPS         float64 `json:"qps,omitempty"`
+	SuccessRate float64 `json:"success_rate,omitempty"`
+	LatencyP50  int64   `json:"latency_p50_ms,omitempty"`
+}
+
+// JSONScan contains scan metadata
+type JSONScan struct {
+	Country      string `json:"country,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	TotalScanned int64  `json:"total_scanned"`
+	Found        int64  `json:"found"`
+	DurationMs   int64  `json:"duration_ms"`
+}
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
 func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) bool {
@@ -97,6 +121,7 @@ func main() {
 	domain := flag.String("domain", "", "Tunnel domain to verify (e.g., t.example.com). Required for slipstream compatibility.")
 	verify := flag.String("verify", "", "Path to slipstream-client binary to verify candidates actually work")
 	showVersion := flag.Bool("version", false, "Show version")
+	jsonOutput := flag.Bool("json", false, "Output results as JSON")
 	flag.Parse()
 
 	// Set data directory
@@ -389,35 +414,77 @@ resultLoop:
 		}
 	}
 
+	// Get final stats
+	scanned, _, _, elapsed := prog.Stats()
+
 	// Write results
-	if len(workingDNS) > 0 {
-		if *progress {
-			fmt.Fprintf(os.Stderr, "---\n")
+	if *jsonOutput {
+		output := JSONOutput{
+			Scan: JSONScan{
+				TotalScanned: scanned,
+				Found:        int64(len(workingDNS)),
+				DurationMs:   elapsed.Milliseconds(),
+			},
 		}
-		for _, ip := range workingDNS {
-			if outFile != nil {
-				fmt.Fprintln(outFile, ip)
-			} else {
-				fmt.Println(ip)
+		if *inputFile == "" {
+			output.Scan.Country = *country
+			output.Scan.Mode = *mode
+		}
+
+		// Build server list with stats if available
+		if len(burstResults) > 0 {
+			for _, r := range burstResults {
+				output.Servers = append(output.Servers, JSONServer{
+					IP:          r.IP,
+					QPS:         r.QPS(),
+					SuccessRate: r.SuccessRate(),
+					LatencyP50:  r.P50().Milliseconds(),
+				})
+			}
+		} else {
+			for _, ip := range workingDNS {
+				output.Servers = append(output.Servers, JSONServer{IP: ip})
 			}
 		}
-	}
 
-	// Print usage hint
-	if *progress && len(workingDNS) > 0 {
-		showDomain := *domain
-		if showDomain == "" {
-			showDomain = "<domain>"
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if outFile != nil {
+			enc = json.NewEncoder(outFile)
+			enc.SetIndent("", "  ")
 		}
-		max := 10
-		if len(workingDNS) < max {
-			max = len(workingDNS)
+		enc.Encode(output)
+	} else {
+		// Plain text output (default)
+		if len(workingDNS) > 0 {
+			if *progress {
+				fmt.Fprintf(os.Stderr, "---\n")
+			}
+			for _, ip := range workingDNS {
+				if outFile != nil {
+					fmt.Fprintln(outFile, ip)
+				} else {
+					fmt.Println(ip)
+				}
+			}
 		}
-		fmt.Fprintf(os.Stderr, "\nUsage:\n  slipstream-client \\\n")
-		for i := 0; i < max; i++ {
-			fmt.Fprintf(os.Stderr, "    --resolver %s:53 \\\n", workingDNS[i])
+
+		// Print usage hint
+		if *progress && len(workingDNS) > 0 {
+			showDomain := *domain
+			if showDomain == "" {
+				showDomain = "<domain>"
+			}
+			max := 10
+			if len(workingDNS) < max {
+				max = len(workingDNS)
+			}
+			fmt.Fprintf(os.Stderr, "\nUsage:\n  slipstream-client \\\n")
+			for i := 0; i < max; i++ {
+				fmt.Fprintf(os.Stderr, "    --resolver %s:53 \\\n", workingDNS[i])
+			}
+			fmt.Fprintf(os.Stderr, "    --domain %s \\\n", showDomain)
+			fmt.Fprintf(os.Stderr, "    --tcp-listen-port 7000\n")
 		}
-		fmt.Fprintf(os.Stderr, "    --domain %s \\\n", showDomain)
-		fmt.Fprintf(os.Stderr, "    --tcp-listen-port 7000\n")
 	}
 }
