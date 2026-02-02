@@ -2,11 +2,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sort"
 	"strings"
@@ -32,52 +30,6 @@ func readIPsFromFile(path string) ([]string, error) {
 		}
 	}
 	return ips, scanner.Err()
-}
-
-// verifyWithSlipstream tests if a DNS server actually works with slipstream-client
-func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout*3)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, clientPath,
-		"--resolver", ip+":53",
-		"--domain", domain,
-		"--tcp-listen-port", "0", // Random available port
-	)
-
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-
-	if err := cmd.Start(); err != nil {
-		return false
-	}
-
-	defer func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-	}()
-
-	// Poll for "Connection ready" (success) or errors (failure)
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		result := output.String()
-
-		// Success: tunnel connected
-		if strings.Contains(result, "Connection ready") {
-			return true
-		}
-
-		// Failure: connection error
-		if strings.Contains(result, "Connection closed") || strings.Contains(result, "became unavailable") {
-			return false
-		}
-
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	return false
 }
 
 func main() {
@@ -219,23 +171,24 @@ resultLoop:
 		}
 	}
 
-	// Phase 2: Verify with slipstream-client if requested
+	// Phase 2: Verify with tunnel client if requested
 	if cfg.VerifyBinary != "" && len(workingDNS) > 0 {
+		verifier := NewSlipstreamVerifier(cfg.VerifyBinary, cfg.Domain, cfg.Timeout)
+
 		if cfg.Progress {
-			fmt.Fprintf(os.Stderr, "\nVerifying %d candidates with slipstream-client...\n", len(workingDNS))
+			fmt.Fprintf(os.Stderr, "\nVerifying %d candidates with %s...\n", len(workingDNS), verifier.Name())
 		}
 
 		var verified []string
 		total := len(workingDNS)
 		width := len(fmt.Sprintf("%d", total))
 		for i, ip := range workingDNS {
-			// Check for interrupt
 			select {
 			case <-ctx.Done():
 				if cfg.Progress {
 					fmt.Fprintf(os.Stderr, "\nInterrupted during verification\n")
 				}
-				goto slipstreamDone
+				goto verifyDone
 			default:
 			}
 
@@ -243,7 +196,7 @@ resultLoop:
 				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 			}
 			start := time.Now()
-			if verifyWithSlipstream(cfg.VerifyBinary, cfg.Domain, ip, cfg.Timeout) {
+			if verifier.Verify(ip) {
 				elapsed := time.Since(start)
 				verified = append(verified, ip)
 				if cfg.Progress {
@@ -255,11 +208,11 @@ resultLoop:
 				}
 			}
 		}
-	slipstreamDone:
+	verifyDone:
 
 		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "---\n")
-			fmt.Fprintf(os.Stderr, "Slipstream: %d/%d passed\n", len(verified), len(workingDNS))
+			fmt.Fprintf(os.Stderr, "%s: %d/%d passed\n", verifier.Name(), len(verified), len(workingDNS))
 		}
 		workingDNS = verified
 	}
