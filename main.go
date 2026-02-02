@@ -127,6 +127,11 @@ func main() {
 	// Set data directory
 	DataDir = *dataDir
 
+	// JSON mode disables progress - machine output only
+	if *jsonOutput {
+		*progress = false
+	}
+
 	if *showVersion {
 		fmt.Printf("dnscan %s\n", version)
 		os.Exit(0)
@@ -355,50 +360,94 @@ resultLoop:
 	// Phase 3: Burst test to verify servers handle concurrent load
 	var burstResults []*BurstResult
 	if *domain != "" && len(workingDNS) > 0 {
-		if *progress {
-			fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
-				len(workingDNS), BurstQueries, BurstMinSuccess)
-		}
-
 		total := len(workingDNS)
-		width := len(fmt.Sprintf("%d", total))
-		for i, ip := range workingDNS {
-			// Check for interrupt
-			select {
-			case <-ctx.Done():
-				if *progress {
-					fmt.Fprintf(os.Stderr, "\nInterrupted during burst test\n")
-				}
-				goto burstDone
-			default:
+
+		if total <= 5 {
+			// Sequential for small lists - nicer per-IP output
+			if *progress {
+				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
+					total, BurstQueries, BurstMinSuccess)
 			}
+
+			width := len(fmt.Sprintf("%d", total))
+			for i, ip := range workingDNS {
+				select {
+				case <-ctx.Done():
+					if *progress {
+						fmt.Fprintf(os.Stderr, "\nInterrupted during burst test\n")
+					}
+					goto burstDone
+				default:
+				}
+
+				if *progress {
+					fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
+				}
+
+				result := BurstTest(ctx, ip, *domain, 53, *timeout)
+
+				if result.Passed() {
+					burstResults = append(burstResults, result)
+					if *progress {
+						color := "\033[33m"
+						if result.SuccessRate() >= 85 {
+							color = "\033[32m"
+						}
+						fmt.Fprintf(os.Stderr, "%sOK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
+							color, result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
+					}
+				} else {
+					if *progress {
+						fmt.Fprintf(os.Stderr, "FAIL %.0f%%\n", result.SuccessRate())
+					}
+				}
+			}
+		} else {
+			// Parallel for larger lists
+			burstWorkers := min(total, 10)
+			if *progress {
+				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates in parallel (%d workers)...\n",
+					total, burstWorkers)
+			}
+
+			burstProg := NewBurstProgress(total, *progress)
+			var progressDone chan struct{}
 
 			if *progress {
-				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
+				progressDone = make(chan struct{})
+				go func() {
+					ticker := time.NewTicker(500 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ticker.C:
+							tested, passed, tot := burstProg.Stats()
+							fmt.Fprintf(os.Stderr, "\rBurst testing: %d/%d tested, %d passed   ", tested, tot, passed)
+						case <-ctx.Done():
+							return
+						case <-progressDone:
+							return
+						}
+					}
+				}()
 			}
 
-			result := BurstTest(ip, *domain, 53, *timeout)
+			resultChan := ParallelBurstTest(ctx, workingDNS, *domain, 53, *timeout, burstWorkers)
+			for result := range resultChan {
+				burstProg.Tested()
+				if result.Passed() {
+					burstProg.Passed()
+					burstResults = append(burstResults, result)
+				}
+			}
 
-			if result.Passed() {
-				burstResults = append(burstResults, result)
-				if *progress {
-					// Green for >=85%, yellow for 70-84%
-					color := "\033[33m" // yellow
-					if result.SuccessRate() >= 85 {
-						color = "\033[32m" // green
-					}
-					fmt.Fprintf(os.Stderr, "%sOK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
-						color, result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
-				}
-			} else {
-				if *progress {
-					fmt.Fprintf(os.Stderr, "FAIL %.0f%%\n", result.SuccessRate())
-				}
+			if progressDone != nil {
+				close(progressDone)
+				fmt.Fprintf(os.Stderr, "\r                                                \r")
 			}
 		}
 	burstDone:
 
-		// Sort by QPS descending (highest throughput first)
 		sort.Slice(burstResults, func(i, j int) bool {
 			return burstResults[i].QPS() > burstResults[j].QPS()
 		})
@@ -406,9 +455,16 @@ resultLoop:
 		if *progress {
 			fmt.Fprintf(os.Stderr, "---\n")
 			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed (sorted by throughput)\n", len(burstResults), len(workingDNS))
+			for _, r := range burstResults {
+				color := "\033[33m"
+				if r.SuccessRate() >= 85 {
+					color = "\033[32m"
+				}
+				fmt.Fprintf(os.Stderr, "%s%-15s OK %.0f%% (%.1f qps, p50=%v)\033[0m\n",
+					color, r.IP, r.SuccessRate(), r.QPS(), r.P50().Round(time.Millisecond))
+			}
 		}
 
-		// Extract sorted IPs
 		workingDNS = nil
 		for _, r := range burstResults {
 			workingDNS = append(workingDNS, r.IP)
@@ -457,15 +513,14 @@ resultLoop:
 		}
 		enc.Encode(output)
 	} else {
-		// Plain text output (default)
+		// Plain text output - skip stdout when progress shows colored stats
 		if len(workingDNS) > 0 {
-			if *progress {
-				fmt.Fprintf(os.Stderr, "---\n")
-			}
-			for _, ip := range workingDNS {
-				if outFile != nil {
+			if outFile != nil {
+				for _, ip := range workingDNS {
 					fmt.Fprintln(outFile, ip)
-				} else {
+				}
+			} else if !*progress {
+				for _, ip := range workingDNS {
 					fmt.Println(ip)
 				}
 			}
