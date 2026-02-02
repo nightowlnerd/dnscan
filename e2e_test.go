@@ -129,17 +129,17 @@ func TestE2EDomainVerification(t *testing.T) {
 	}
 }
 
-func TestE2EBurstTest(t *testing.T) {
+func TestE2EBenchmark(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := Benchmark(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
-	if result.Queries != BurstQueries {
-		t.Errorf("Expected %d queries, got %d", BurstQueries, result.Queries)
+	if result.Queries != BenchmarkQueries {
+		t.Errorf("Expected %d queries, got %d", BenchmarkQueries, result.Queries)
 	}
 	if result.SuccessRate() < 90 {
 		t.Errorf("Expected high success rate, got %.1f%%", result.SuccessRate())
@@ -230,20 +230,20 @@ func TestE2EProgressTracking(t *testing.T) {
 	for range results {
 	}
 
-	scanned, found, total, _ := progress.Stats()
-	if scanned != 3 || found != 3 || total != 3 {
-		t.Errorf("Progress mismatch: scanned=%d found=%d total=%d", scanned, found, total)
+	stats := progress.Stats()
+	if stats.Processed != 3 || stats.Success != 3 || stats.Total != 3 {
+		t.Errorf("Progress mismatch: processed=%d success=%d total=%d", stats.Processed, stats.Success, stats.Total)
 	}
 }
 
-func TestE2EBurstQPS(t *testing.T) {
+func TestE2EBenchmarkQPS(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := Benchmark(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	if result.QPS() <= 0 {
 		t.Errorf("QPS should be positive, got %.2f", result.QPS())
@@ -253,7 +253,7 @@ func TestE2EBurstQPS(t *testing.T) {
 	}
 }
 
-func TestE2EParallelBurstTest(t *testing.T) {
+func TestE2EBenchmarkParallel(t *testing.T) {
 	// Start 3 mock servers
 	var mocks []*mockDNSServer
 	var ips []string
@@ -275,7 +275,7 @@ func TestE2EParallelBurstTest(t *testing.T) {
 	defer cancel()
 
 	// All mocks use same port pattern, so we use first mock's port
-	resultChan := ParallelBurstTest(ctx, ips, "test.example.com", mocks[0].port, 2*time.Second, 3)
+	resultChan := BenchmarkParallel(ctx, ips, "test.example.com", mocks[0].port, 2*time.Second, 3)
 
 	var count, passed int
 	for r := range resultChan {
@@ -293,7 +293,7 @@ func TestE2EParallelBurstTest(t *testing.T) {
 	}
 }
 
-func TestE2EBurstTestContextCancellation(t *testing.T) {
+func TestE2EBenchmarkContextCancellation(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
@@ -304,41 +304,41 @@ func TestE2EBurstTestContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	result := BurstTest(ctx, mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := Benchmark(ctx, mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	// Should return early with partial/no results
-	if result.Successful == BurstQueries {
+	if result.Successful == BenchmarkQueries {
 		t.Error("Expected early termination with cancelled context")
 	}
 }
 
-func TestBurstProgress(t *testing.T) {
-	prog := NewBurstProgress(10, true)
+func TestProgressUnified(t *testing.T) {
+	prog := NewProgress(10, true)
 
-	prog.Tested()
-	prog.Tested()
-	prog.Passed()
+	prog.Increment()
+	prog.Increment()
+	prog.Success()
 
-	tested, passed, total := prog.Stats()
-	if tested != 2 {
-		t.Errorf("Expected 2 tested, got %d", tested)
+	stats := prog.Stats()
+	if stats.Processed != 2 {
+		t.Errorf("Expected 2 processed, got %d", stats.Processed)
 	}
-	if passed != 1 {
-		t.Errorf("Expected 1 passed, got %d", passed)
+	if stats.Success != 1 {
+		t.Errorf("Expected 1 success, got %d", stats.Success)
 	}
-	if total != 10 {
-		t.Errorf("Expected total 10, got %d", total)
+	if stats.Total != 10 {
+		t.Errorf("Expected total 10, got %d", stats.Total)
 	}
 }
 
-func TestE2EBurstResultMetrics(t *testing.T) {
+func TestE2EBenchmarkResultMetrics(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := Benchmark(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	if result.IP != mock.ip {
 		t.Errorf("IP mismatch: got %s, expected %s", result.IP, mock.ip)

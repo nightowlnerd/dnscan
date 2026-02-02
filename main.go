@@ -66,11 +66,11 @@ func main() {
 			for {
 				select {
 				case <-ticker.C:
-					scanned, found, total, elapsed := prog.Stats()
-					rate := float64(scanned) / elapsed.Seconds()
-					pct := float64(scanned) / float64(total) * 100
+					stats := prog.Stats()
+					rate := float64(stats.Processed) / stats.Elapsed.Seconds()
+					pct := float64(stats.Processed) / float64(stats.Total) * 100
 					fmt.Fprintf(os.Stderr, "\rScanned: %d/%d (%.1f%%) | Found: %d | %.0f IPs/sec   ",
-						scanned, total, pct, found, rate)
+						stats.Processed, stats.Total, pct, stats.Success, rate)
 				case <-ctx.Done():
 					return
 				case <-progressDone:
@@ -111,10 +111,10 @@ resultLoop:
 
 	// Print final stats
 	if cfg.Progress {
-		scanned, found, _, elapsed := prog.Stats()
+		stats := prog.Stats()
 		fmt.Fprintf(os.Stderr, "\r                                                              \r")
-		fmt.Fprintf(os.Stderr, "Completed: %d IPs in %v\n", scanned, elapsed.Round(time.Millisecond))
-		fmt.Fprintf(os.Stderr, "Found: %d DNS candidates\n", found)
+		fmt.Fprintf(os.Stderr, "Completed: %d IPs in %v\n", stats.Processed, stats.Elapsed.Round(time.Millisecond))
+		fmt.Fprintf(os.Stderr, "Found: %d DNS candidates\n", stats.Success)
 		if suspiciousCount > 0 {
 			fmt.Fprintf(os.Stderr, "\033[33mWarning: %d servers returned private IPs (possible DNS hijacking)\033[0m\n", suspiciousCount)
 		}
@@ -166,16 +166,16 @@ resultLoop:
 		workingDNS = verified
 	}
 
-	// Phase 3: Burst test to verify servers handle concurrent load
-	var burstResults []*BurstResult
+	// Phase 3: Benchmark to verify servers handle concurrent load
+	var benchResults []*BenchmarkResult
 	if cfg.Domain != "" && len(workingDNS) > 0 {
 		total := len(workingDNS)
 
 		if total <= 5 {
 			// Sequential for small lists - nicer per-IP output
 			if cfg.Progress {
-				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
-					total, BurstQueries, BurstMinSuccess)
+				fmt.Fprintf(os.Stderr, "\nBenchmarking %d candidates (%d queries, %d%% required)...\n",
+					total, BenchmarkQueries, BenchmarkThreshold)
 			}
 
 			width := len(fmt.Sprintf("%d", total))
@@ -183,9 +183,9 @@ resultLoop:
 				select {
 				case <-ctx.Done():
 					if cfg.Progress {
-						fmt.Fprintf(os.Stderr, "\nInterrupted during burst test\n")
+						fmt.Fprintf(os.Stderr, "\nInterrupted during benchmark\n")
 					}
-					goto burstDone
+					goto benchDone
 				default:
 				}
 
@@ -193,10 +193,10 @@ resultLoop:
 					fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 				}
 
-				result := BurstTest(ctx, ip, cfg.Domain, 53, cfg.Timeout)
+				result := Benchmark(ctx, ip, cfg.Domain, 53, cfg.Timeout)
 
 				if result.Passed() {
-					burstResults = append(burstResults, result)
+					benchResults = append(benchResults, result)
 					if cfg.Progress {
 						color := "\033[33m"
 						if result.SuccessRate() >= 85 {
@@ -213,13 +213,13 @@ resultLoop:
 			}
 		} else {
 			// Parallel for larger lists
-			burstWorkers := min(total, 10)
+			benchWorkers := min(total, 10)
 			if cfg.Progress {
-				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates in parallel (%d workers)...\n",
-					total, burstWorkers)
+				fmt.Fprintf(os.Stderr, "\nBenchmarking %d candidates in parallel (%d workers)...\n",
+					total, benchWorkers)
 			}
 
-			burstProg := NewBurstProgress(total, cfg.Progress)
+			benchProg := NewProgress(total, cfg.Progress)
 			var progressDone chan struct{}
 
 			if cfg.Progress {
@@ -230,8 +230,8 @@ resultLoop:
 					for {
 						select {
 						case <-ticker.C:
-							tested, passed, tot := burstProg.Stats()
-							fmt.Fprintf(os.Stderr, "\rBurst testing: %d/%d tested, %d passed   ", tested, tot, passed)
+							stats := benchProg.Stats()
+							fmt.Fprintf(os.Stderr, "\rBenchmarking: %d/%d tested, %d passed   ", stats.Processed, stats.Total, stats.Success)
 						case <-ctx.Done():
 							return
 						case <-progressDone:
@@ -241,12 +241,12 @@ resultLoop:
 				}()
 			}
 
-			resultChan := ParallelBurstTest(ctx, workingDNS, cfg.Domain, 53, cfg.Timeout, burstWorkers)
+			resultChan := BenchmarkParallel(ctx, workingDNS, cfg.Domain, 53, cfg.Timeout, benchWorkers)
 			for result := range resultChan {
-				burstProg.Tested()
+				benchProg.Increment()
 				if result.Passed() {
-					burstProg.Passed()
-					burstResults = append(burstResults, result)
+					benchProg.Success()
+					benchResults = append(benchResults, result)
 				}
 			}
 
@@ -255,16 +255,16 @@ resultLoop:
 				fmt.Fprintf(os.Stderr, "\r                                                \r")
 			}
 		}
-	burstDone:
+	benchDone:
 
-		sort.Slice(burstResults, func(i, j int) bool {
-			return burstResults[i].QPS() > burstResults[j].QPS()
+		sort.Slice(benchResults, func(i, j int) bool {
+			return benchResults[i].QPS() > benchResults[j].QPS()
 		})
 
 		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "---\n")
-			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed (sorted by throughput)\n", len(burstResults), len(workingDNS))
-			for _, r := range burstResults {
+			fmt.Fprintf(os.Stderr, "Benchmark: %d/%d passed (sorted by throughput)\n", len(benchResults), len(workingDNS))
+			for _, r := range benchResults {
 				color := "\033[33m"
 				if r.SuccessRate() >= 85 {
 					color = "\033[32m"
@@ -275,16 +275,16 @@ resultLoop:
 		}
 
 		workingDNS = nil
-		for _, r := range burstResults {
+		for _, r := range benchResults {
 			workingDNS = append(workingDNS, r.IP)
 		}
 	}
 
-	scanned, _, _, elapsed := prog.Stats()
+	finalStats := prog.Stats()
 
 	var serverResults []ServerResult
-	if len(burstResults) > 0 {
-		for _, r := range burstResults {
+	if len(benchResults) > 0 {
+		for _, r := range benchResults {
 			serverResults = append(serverResults, ServerResult{
 				IP:          r.IP,
 				QPS:         r.QPS(),
@@ -298,14 +298,14 @@ resultLoop:
 		}
 	}
 
-	stats := ScanStats{
-		TotalScanned: scanned,
+	outputStats := ScanStats{
+		TotalScanned: finalStats.Processed,
 		Found:        int64(len(serverResults)),
-		Duration:     elapsed,
+		Duration:     finalStats.Elapsed,
 	}
 	if cfg.InputFile == "" {
-		stats.Country = cfg.Country
-		stats.Mode = cfg.Mode
+		outputStats.Country = cfg.Country
+		outputStats.Mode = cfg.Mode
 	}
 
 	var out io.Writer = os.Stdout
@@ -314,10 +314,10 @@ resultLoop:
 	}
 
 	if cfg.JSONOutput {
-		NewJSONWriter(out).Write(serverResults, stats)
+		NewJSONWriter(out).Write(serverResults, outputStats)
 	} else {
 		if app.outFile != nil || !cfg.Progress {
-			NewTextWriter(out).Write(serverResults, stats)
+			NewTextWriter(out).Write(serverResults, outputStats)
 		}
 		if cfg.Progress {
 			PrintUsageHint(os.Stderr, workingDNS, cfg.Domain)

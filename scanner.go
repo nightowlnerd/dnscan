@@ -3,73 +3,27 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"net"
-	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
 )
 
-// Burst test parameters - tune these for accuracy vs speed tradeoff
-const (
-	BurstQueries      = 20 // Number of queries per burst test
-	BurstConcurrency  = 5  // Concurrent queries during burst
-	BurstMinSuccess   = 70 // Minimum success rate % to pass
-	BurstSubdomainLen = 32 // Bytes for random subdomain (32 = ~52 base32 chars)
-)
+const probeDomain = "google.com"
 
-// randomSubdomain generates a random subdomain prefix
-func randomSubdomain() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-// randomSlipstreamSubdomain generates a subdomain similar to slipstream's Base32 encoding
-func randomSlipstreamSubdomain() string {
-	b := make([]byte, BurstSubdomainLen)
-	rand.Read(b)
-	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
-}
-
-// ScanResult holds the result of a DNS probe
+// ScanResult holds the outcome of probing a single DNS server.
 type ScanResult struct {
 	IP         string
 	Working    bool
-	Suspicious bool
+	Suspicious bool // true if server returned private IP (possible hijacking)
 	RTT        time.Duration
 	Error      error
 }
 
-// isPrivateIP detects DNS hijacking by checking if response IPs are in reserved ranges
-func isPrivateIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	privateRanges := []string{
-		"10.0.0.0/8",     // Common in corporate/ISP hijacking
-		"172.16.0.0/12",  // Often used by captive portals
-		"192.168.0.0/16", // Home routers sometimes hijack DNS
-		"127.0.0.0/8",    // Loopback, used to block domains
-		"169.254.0.0/16", // Link-local, indicates broken resolution
-		"100.64.0.0/10",  // CGNAT, ISP-level interception
-		"0.0.0.0/8",      // Invalid, used to sink traffic
-	}
-	for _, cidr := range privateRanges {
-		_, network, _ := net.ParseCIDR(cidr)
-		if network.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// Scanner manages the worker pool for DNS probing
+// Scanner probes DNS servers for availability and hijacking detection.
 type Scanner struct {
 	workers      int
 	timeout      time.Duration
@@ -78,44 +32,6 @@ type Scanner struct {
 	verifyDomain string
 }
 
-// Progress tracks scanning progress
-type Progress struct {
-	total     int64
-	scanned   int64
-	found     int64
-	startTime time.Time
-	enabled   bool
-	mu        sync.Mutex
-}
-
-// NewProgress creates a new progress tracker
-func NewProgress(total int, enabled bool) *Progress {
-	return &Progress{
-		total:     int64(total),
-		startTime: time.Now(),
-		enabled:   enabled,
-	}
-}
-
-// Increment marks one IP as scanned
-func (p *Progress) Increment() {
-	atomic.AddInt64(&p.scanned, 1)
-}
-
-// Found marks a working DNS found
-func (p *Progress) Found() {
-	atomic.AddInt64(&p.found, 1)
-}
-
-// Stats returns current stats
-func (p *Progress) Stats() (scanned, found, total int64, elapsed time.Duration) {
-	return atomic.LoadInt64(&p.scanned),
-		atomic.LoadInt64(&p.found),
-		p.total,
-		time.Since(p.startTime)
-}
-
-// NewScanner creates a new scanner with given workers and timeout
 func NewScanner(workers int, timeout time.Duration, port int, progress *Progress, verifyDomain string) *Scanner {
 	if port == 0 {
 		port = 53
@@ -129,7 +45,7 @@ func NewScanner(workers int, timeout time.Duration, port int, progress *Progress
 	}
 }
 
-// Probe tests if an IP is a working DNS server
+// Probe tests a single IP for DNS availability.
 func (s *Scanner) Probe(ip string) ScanResult {
 	client := &dns.Client{
 		Net:         "udp",
@@ -137,9 +53,8 @@ func (s *Scanner) Probe(ip string) ScanResult {
 		ReadTimeout: s.timeout,
 	}
 
-	// First test: can it resolve google.com?
 	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn("google.com"), dns.TypeA)
+	m.SetQuestion(dns.Fqdn(probeDomain), dns.TypeA)
 	m.RecursionDesired = true
 
 	addr := fmt.Sprintf("%s:%d", ip, s.port)
@@ -148,7 +63,6 @@ func (s *Scanner) Probe(ip string) ScanResult {
 		return ScanResult{IP: ip, Working: false, Error: err}
 	}
 
-	// Check for valid response with actual answer
 	if reply == nil || reply.Rcode != dns.RcodeSuccess || len(reply.Answer) == 0 {
 		return ScanResult{IP: ip, Working: false}
 	}
@@ -161,26 +75,19 @@ func (s *Scanner) Probe(ip string) ScanResult {
 		}
 	}
 
-	// If verify domain is set, check if query reaches our authoritative server
-	// Slipstream uses TXT records exclusively, so test with TXT
-	// Any response (NXDOMAIN, NOERROR, etc.) = query reached server
-	// Only timeout/error = didn't reach
 	if s.verifyDomain != "" {
-		// Use random subdomain to avoid DNS caching
 		testDomain := randomSubdomain() + "." + s.verifyDomain
 
 		m2 := new(dns.Msg)
 		m2.SetQuestion(dns.Fqdn(testDomain), dns.TypeTXT)
 		m2.RecursionDesired = true
-		// Set EDNS0 with 1232 byte UDP payload (matches slipstream)
-		m2.SetEdns0(1232, false)
+		m2.SetEdns0(EDNSBufferSize, false)
 
 		reply2, rtt2, err := client.Exchange(m2, addr)
 		if err != nil {
 			return ScanResult{IP: ip, Working: false, Error: err}
 		}
 
-		// Any response = query reached our authoritative server
 		if reply2 != nil {
 			return ScanResult{IP: ip, Working: true, RTT: rtt2}
 		}
@@ -190,12 +97,11 @@ func (s *Scanner) Probe(ip string) ScanResult {
 	return ScanResult{IP: ip, Working: true, RTT: rtt}
 }
 
-// Run starts the scanner with a worker pool
+// Run starts a worker pool that probes IPs concurrently.
 func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult {
 	results := make(chan ScanResult, s.workers)
 	var wg sync.WaitGroup
 
-	// Start workers
 	for i := 0; i < s.workers; i++ {
 		wg.Add(1)
 		go func() {
@@ -212,7 +118,7 @@ func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult 
 					if s.progress != nil {
 						s.progress.Increment()
 						if result.Working {
-							s.progress.Found()
+							s.progress.Success()
 						}
 					}
 					select {
@@ -225,7 +131,6 @@ func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult 
 		}()
 	}
 
-	// Close results channel when all workers are done
 	go func() {
 		wg.Wait()
 		close(results)
@@ -234,191 +139,31 @@ func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult 
 	return results
 }
 
-// BurstResult holds results from a burst test
-type BurstResult struct {
-	IP         string
-	Queries    int
-	Successful int
-	Failed     int
-	Latencies  []time.Duration
-	Duration   time.Duration
+var privateRanges = []string{
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"100.64.0.0/10",
+	"0.0.0.0/8",
 }
 
-// SuccessRate returns percentage of successful queries
-func (r *BurstResult) SuccessRate() float64 {
-	if r.Queries == 0 {
-		return 0
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
 	}
-	return float64(r.Successful) / float64(r.Queries) * 100
-}
-
-// QPS returns queries per second
-func (r *BurstResult) QPS() float64 {
-	if r.Duration == 0 {
-		return 0
-	}
-	return float64(r.Successful) / r.Duration.Seconds()
-}
-
-// P50 returns median latency
-func (r *BurstResult) P50() time.Duration {
-	return r.percentile(50)
-}
-
-func (r *BurstResult) percentile(p int) time.Duration {
-	if len(r.Latencies) == 0 {
-		return 0
-	}
-	sorted := make([]time.Duration, len(r.Latencies))
-	copy(sorted, r.Latencies)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	idx := len(sorted) * p / 100
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
-	}
-	return sorted[idx]
-}
-
-// Passed returns true if burst test meets minimum success rate
-func (r *BurstResult) Passed() bool {
-	return r.SuccessRate() >= BurstMinSuccess
-}
-
-// BurstTest runs concurrent DNS queries to test server reliability under load
-func BurstTest(ctx context.Context, ip, domain string, port int, timeout time.Duration) *BurstResult {
-	if port == 0 {
-		port = 53
-	}
-	addr := fmt.Sprintf("%s:%d", ip, port)
-
-	result := &BurstResult{
-		IP:      ip,
-		Queries: BurstQueries,
-	}
-
-	client := &dns.Client{
-		Net:     "udp",
-		Timeout: timeout,
-	}
-
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, BurstConcurrency)
-
-	start := time.Now()
-
-	for i := 0; i < BurstQueries; i++ {
-		select {
-		case <-ctx.Done():
-			result.Duration = time.Since(start)
-			return result
-		default:
+	for _, cidr := range privateRanges {
+		_, network, _ := net.ParseCIDR(cidr)
+		if network.Contains(ip) {
+			return true
 		}
-
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			select {
-			case <-ctx.Done():
-				mu.Lock()
-				result.Failed++
-				mu.Unlock()
-				return
-			default:
-			}
-
-			subdomain := randomSlipstreamSubdomain()
-			m := new(dns.Msg)
-			m.SetQuestion(dns.Fqdn(subdomain+"."+domain), dns.TypeTXT)
-			m.RecursionDesired = true
-			m.SetEdns0(1232, false)
-
-			_, rtt, err := client.Exchange(m, addr)
-
-			mu.Lock()
-			if err != nil {
-				result.Failed++
-			} else {
-				result.Successful++
-				result.Latencies = append(result.Latencies, rtt)
-			}
-			mu.Unlock()
-		}()
 	}
-
-	wg.Wait()
-	result.Duration = time.Since(start)
-	return result
+	return false
 }
 
-// BurstProgress tracks parallel burst test progress with atomic counters
-type BurstProgress struct {
-	total   int64
-	tested  int64
-	passed  int64
-	enabled bool
-}
-
-func NewBurstProgress(total int, enabled bool) *BurstProgress {
-	return &BurstProgress{total: int64(total), enabled: enabled}
-}
-
-func (p *BurstProgress) Tested() { atomic.AddInt64(&p.tested, 1) }
-func (p *BurstProgress) Passed() { atomic.AddInt64(&p.passed, 1) }
-func (p *BurstProgress) Stats() (tested, passed, total int64) {
-	return atomic.LoadInt64(&p.tested), atomic.LoadInt64(&p.passed), p.total
-}
-
-// ParallelBurstTest runs burst tests on multiple IPs concurrently
-func ParallelBurstTest(ctx context.Context, ips []string, domain string, port int,
-	timeout time.Duration, workers int) <-chan *BurstResult {
-
-	results := make(chan *BurstResult, workers)
-	ipChan := make(chan string, len(ips))
-
-	go func() {
-		defer close(ipChan)
-		for _, ip := range ips {
-			select {
-			case ipChan <- ip:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case ip, ok := <-ipChan:
-					if !ok {
-						return
-					}
-					result := BurstTest(ctx, ip, domain, port, timeout)
-					select {
-					case results <- result:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	return results
+func randomSubdomain() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
