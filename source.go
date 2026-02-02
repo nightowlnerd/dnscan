@@ -32,7 +32,7 @@ type DNSListSource struct {
 }
 
 func NewDNSListSource(dataDir, country string) (*DNSListSource, error) {
-	ips, err := LoadDNSList(dataDir, country)
+	ips, err := LoadKnownDNS(dataDir, country)
 	if err != nil {
 		return nil, err
 	}
@@ -47,26 +47,31 @@ func (s *DNSListSource) Count() int {
 	return len(s.ips)
 }
 
-type RangeSource struct {
+type CIDRSource struct {
 	country string
 	mode    string
-	ranges  []string
+	blocks  []string
 }
 
-func NewRangeSource(dataDir, country, mode string) (*RangeSource, error) {
-	ranges, err := LoadRanges(dataDir, country)
+func NewCIDRSource(dataDir, country, mode string) (*CIDRSource, error) {
+	if !CIDRBlocksExist(dataDir, country) {
+		if err := DownloadCIDRBlocks(dataDir, country); err != nil {
+			return nil, err
+		}
+	}
+	blocks, err := LoadCIDRBlocks(dataDir, country)
 	if err != nil {
 		return nil, err
 	}
-	return &RangeSource{country: country, mode: mode, ranges: ranges}, nil
+	return &CIDRSource{country: country, mode: mode, blocks: blocks}, nil
 }
 
-func (s *RangeSource) IPs() <-chan string {
-	return ExpandRangesWithMode(s.ranges, s.mode)
+func (s *CIDRSource) IPs() <-chan string {
+	return ExpandCIDR(s.blocks, s.mode)
 }
 
-func (s *RangeSource) Count() int {
-	return CountIPsWithMode(s.ranges, s.mode)
+func (s *CIDRSource) Count() int {
+	return CountCIDRIPs(s.blocks, s.mode)
 }
 
 func sliceToChannel(ips []string) <-chan string {

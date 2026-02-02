@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-func TestExpandRangesWithModeFast(t *testing.T) {
-	ranges := []string{"192.168.1.0/24"}
-	ips := ExpandRangesWithMode(ranges, "fast")
+func TestExpandCIDRFast(t *testing.T) {
+	blocks := []string{"192.168.1.0/24"}
+	ips := ExpandCIDR(blocks, "fast")
 
 	var result []string
 	for ip := range ips {
@@ -17,7 +17,6 @@ func TestExpandRangesWithModeFast(t *testing.T) {
 		t.Errorf("Fast mode: expected 3 IPs, got %d: %v", len(result), result)
 	}
 
-	// Check expected IPs are present
 	expected := map[string]bool{
 		"192.168.1.1":   false,
 		"192.168.1.53":  false,
@@ -33,9 +32,9 @@ func TestExpandRangesWithModeFast(t *testing.T) {
 	}
 }
 
-func TestExpandRangesWithModeMedium(t *testing.T) {
-	ranges := []string{"192.168.1.0/24"}
-	ips := ExpandRangesWithMode(ranges, "medium")
+func TestExpandCIDRMedium(t *testing.T) {
+	blocks := []string{"192.168.1.0/24"}
+	ips := ExpandCIDR(blocks, "medium")
 
 	var count int
 	for range ips {
@@ -47,9 +46,9 @@ func TestExpandRangesWithModeMedium(t *testing.T) {
 	}
 }
 
-func TestExpandRangesWithModeAll(t *testing.T) {
-	ranges := []string{"192.168.1.0/24"}
-	ips := ExpandRangesWithMode(ranges, "all")
+func TestExpandCIDRAll(t *testing.T) {
+	blocks := []string{"192.168.1.0/24"}
+	ips := ExpandCIDR(blocks, "all")
 
 	var count int
 	for range ips {
@@ -61,11 +60,10 @@ func TestExpandRangesWithModeAll(t *testing.T) {
 	}
 }
 
-func TestExpandRangesWithMode16(t *testing.T) {
-	ranges := []string{"10.0.0.0/16"}
+func TestExpandCIDR16(t *testing.T) {
+	blocks := []string{"10.0.0.0/16"}
 
-	// Fast mode on /16 should give 3 IPs * 256 subnets = 768
-	ips := ExpandRangesWithMode(ranges, "fast")
+	ips := ExpandCIDR(blocks, "fast")
 	var count int
 	for range ips {
 		count++
@@ -77,8 +75,8 @@ func TestExpandRangesWithMode16(t *testing.T) {
 	}
 }
 
-func TestCountIPsWithMode(t *testing.T) {
-	ranges := []string{"192.168.1.0/24"}
+func TestCountCIDRIPs(t *testing.T) {
+	blocks := []string{"192.168.1.0/24"}
 
 	tests := []struct {
 		mode     string
@@ -90,16 +88,16 @@ func TestCountIPsWithMode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		count := CountIPsWithMode(ranges, tt.mode)
+		count := CountCIDRIPs(blocks, tt.mode)
 		if count != tt.expected {
-			t.Errorf("CountIPsWithMode(%s): expected %d, got %d", tt.mode, tt.expected, count)
+			t.Errorf("CountCIDRIPs(%s): expected %d, got %d", tt.mode, tt.expected, count)
 		}
 	}
 }
 
 func TestInvalidCIDR(t *testing.T) {
-	ranges := []string{"invalid-cidr"}
-	ips := ExpandRangesWithMode(ranges, "fast")
+	blocks := []string{"invalid-cidr"}
+	ips := ExpandCIDR(blocks, "fast")
 
 	var count int
 	for range ips {

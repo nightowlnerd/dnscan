@@ -41,7 +41,7 @@ func newIPSource(cfg *Config) (IPSource, error) {
 	if cfg.Mode == "list" {
 		return NewDNSListSource(cfg.DataDir, cfg.Country)
 	}
-	return NewRangeSource(cfg.DataDir, cfg.Country, cfg.Mode)
+	return NewCIDRSource(cfg.DataDir, cfg.Country, cfg.Mode)
 }
 
 func (a *App) Close() {
