@@ -68,7 +68,7 @@ func main() {
 
 	var benchResults []*BenchmarkResult
 	if cfg.Domain != "" && len(workingDNS) > 0 {
-		benchmarker := NewBenchmarker(cfg.Domain, 53, cfg.Timeout, os.Stderr, cfg.Progress)
+		benchmarker := NewBenchmarker(cfg.Domain, 53, cfg.Timeout, cfg.Threshold, os.Stderr, cfg.Progress)
 		benchResults = benchmarker.Benchmark(ctx, workingDNS)
 
 		workingDNS = nil
