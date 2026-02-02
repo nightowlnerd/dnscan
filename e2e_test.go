@@ -163,7 +163,7 @@ func TestE2EWorkerPool(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	results := scanner.Run(ctx, IPsFromList(ips))
+	results := scanner.Run(ctx, sliceToChannel(ips))
 
 	var working, total int
 	for r := range results {
@@ -226,7 +226,7 @@ func TestE2EProgressTracking(t *testing.T) {
 	progress := NewProgress(len(ips), false)
 	scanner := NewScanner(1, 2*time.Second, mock.port, progress, "")
 
-	results := scanner.Run(context.Background(), IPsFromList(ips))
+	results := scanner.Run(context.Background(), sliceToChannel(ips))
 	for range results {
 	}
 

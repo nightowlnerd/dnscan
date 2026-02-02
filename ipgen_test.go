@@ -97,20 +97,6 @@ func TestCountIPsWithMode(t *testing.T) {
 	}
 }
 
-func TestIPsFromList(t *testing.T) {
-	input := []string{"1.1.1.1", "8.8.8.8", "9.9.9.9"}
-	ips := IPsFromList(input)
-
-	var result []string
-	for ip := range ips {
-		result = append(result, ip)
-	}
-
-	if len(result) != len(input) {
-		t.Errorf("Expected %d IPs, got %d", len(input), len(result))
-	}
-}
-
 func TestInvalidCIDR(t *testing.T) {
 	ranges := []string{"invalid-cidr"}
 	ips := ExpandRangesWithMode(ranges, "fast")

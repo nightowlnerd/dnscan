@@ -1,36 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sort"
-	"strings"
 	"syscall"
 	"time"
 )
 
 var version = "dev"
-
-func readIPsFromFile(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var ips []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" && !strings.HasPrefix(line, "#") {
-			ips = append(ips, line)
-		}
-	}
-	return ips, scanner.Err()
-}
 
 func main() {
 	cfg := ParseFlags()
@@ -45,47 +26,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	DataDir = cfg.DataDir
-
-	var outFile *os.File
-	if cfg.OutputFile != "" {
-		f, err := os.Create(cfg.OutputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create output file: %v\n", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-		outFile = f
+	app, err := NewApp(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
+	defer app.Close()
 
-	var ips <-chan string
-	var totalIPs int
-
-	if cfg.InputFile != "" {
-		fileIPs, err := readIPsFromFile(cfg.InputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read file: %v\n", err)
-			os.Exit(1)
-		}
-		ips = IPsFromList(fileIPs)
-		totalIPs = len(fileIPs)
-	} else if cfg.Mode == "list" {
-		dnsList, err := LoadDNSList(cfg.Country)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load DNS list for %s: %v\n", cfg.Country, err)
-			os.Exit(1)
-		}
-		ips = IPsFromList(dnsList)
-		totalIPs = len(dnsList)
-	} else {
-		ranges, err := LoadRanges(cfg.Country)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load ranges for %s: %v\n", cfg.Country, err)
-			os.Exit(1)
-		}
-		totalIPs = CountIPsWithMode(ranges, cfg.Mode)
-		ips = ExpandRangesWithMode(ranges, cfg.Mode)
-	}
+	ips := app.source.IPs()
+	totalIPs := app.source.Count()
 
 	PrintBanner(os.Stderr, cfg, totalIPs, version)
 
@@ -359,16 +308,15 @@ resultLoop:
 		stats.Mode = cfg.Mode
 	}
 
-	// Write output
-	out := os.Stdout
-	if outFile != nil {
-		out = outFile
+	var out io.Writer = os.Stdout
+	if app.outFile != nil {
+		out = app.outFile
 	}
 
 	if cfg.JSONOutput {
 		NewJSONWriter(out).Write(serverResults, stats)
 	} else {
-		if outFile != nil || !cfg.Progress {
+		if app.outFile != nil || !cfg.Progress {
 			NewTextWriter(out).Write(serverResults, stats)
 		}
 		if cfg.Progress {

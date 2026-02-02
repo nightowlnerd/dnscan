@@ -10,15 +10,10 @@ import (
 	"strings"
 )
 
-// DataDir is the directory containing ranges and dns files
-var DataDir = "data"
-
 const ipDenyURL = "https://www.ipdeny.com/ipblocks/data/aggregated/%s-aggregated.zone"
 
-// LoadRanges loads IP ranges from data/ranges/<country>.zone
-// Auto-downloads from ipdeny.com if not found locally
-func LoadRanges(country string) ([]string, error) {
-	path := filepath.Join(DataDir, "ranges", country+".zone")
+func LoadRanges(dataDir, country string) ([]string, error) {
+	path := filepath.Join(dataDir, "ranges", country+".zone")
 
 	// Check if file exists, download if not
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -60,9 +55,8 @@ func downloadRanges(country, destPath string) error {
 	return err
 }
 
-// LoadDNSList loads known DNS servers from data/dns/<country>.txt
-func LoadDNSList(country string) ([]string, error) {
-	path := filepath.Join(DataDir, "dns", country+".txt")
+func LoadDNSList(dataDir, country string) ([]string, error) {
+	path := filepath.Join(dataDir, "dns", country+".txt")
 	return loadLines(path)
 }
 
@@ -88,9 +82,8 @@ func loadLines(path string) ([]string, error) {
 	return lines, nil
 }
 
-// AvailableCountries returns list of countries with range files
-func AvailableCountries() []string {
-	rangesDir := filepath.Join(DataDir, "ranges")
+func AvailableCountries(dataDir string) []string {
+	rangesDir := filepath.Join(dataDir, "ranges")
 	entries, err := os.ReadDir(rangesDir)
 	if err != nil {
 		return nil

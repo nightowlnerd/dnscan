@@ -87,19 +87,6 @@ func expandCIDRWithMode(cidr string, mode string) <-chan string {
 	return out
 }
 
-// IPsFromList converts a slice of IPs to a channel
-func IPsFromList(ips []string) <-chan string {
-	out := make(chan string, len(ips))
-
-	go func() {
-		defer close(out)
-		for _, ip := range ips {
-			out <- ip
-		}
-	}()
-
-	return out
-}
 
 // CountIPsWithMode estimates total IPs based on ranges and mode
 func CountIPsWithMode(ranges []string, mode string) int {

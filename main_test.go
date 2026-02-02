@@ -81,8 +81,8 @@ func TestFileInputNotFound(t *testing.T) {
 		t.Error("expected error for missing file")
 	}
 
-	if !strings.Contains(string(out), "Failed to read file") {
-		t.Errorf("expected 'Failed to read file' error, got: %s", out)
+	if !strings.Contains(string(out), "failed to open") {
+		t.Errorf("expected 'failed to open' error, got: %s", out)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestProgressFlagDisabled(t *testing.T) {
 	}
 }
 
-func TestReadIPsFromFile(t *testing.T) {
+func TestLoadLines(t *testing.T) {
 	// Create temp file
 	f, _ := os.CreateTemp("", "ips-*.txt")
 	f.WriteString("# comment line\n")
@@ -175,9 +175,9 @@ func TestReadIPsFromFile(t *testing.T) {
 	f.Close()
 	defer os.Remove(f.Name())
 
-	ips, err := readIPsFromFile(f.Name())
+	ips, err := loadLines(f.Name())
 	if err != nil {
-		t.Fatalf("readIPsFromFile failed: %v", err)
+		t.Fatalf("loadLines failed: %v", err)
 	}
 
 	if len(ips) != 2 {

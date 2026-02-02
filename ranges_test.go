@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadRanges(t *testing.T) {
-	ranges, err := LoadRanges("ir")
+	ranges, err := LoadRanges("data", "ir")
 	if err != nil {
 		t.Fatalf("LoadRanges failed: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestLoadRanges(t *testing.T) {
 }
 
 func TestLoadDNSList(t *testing.T) {
-	dns, err := LoadDNSList("ir")
+	dns, err := LoadDNSList("data", "ir")
 	if err != nil {
 		t.Fatalf("LoadDNSList failed: %v", err)
 	}
@@ -42,14 +42,14 @@ func TestLoadDNSList(t *testing.T) {
 }
 
 func TestLoadRangesInvalidCountry(t *testing.T) {
-	_, err := LoadRanges("xx")
+	_, err := LoadRanges("data", "xx")
 	if err == nil {
 		t.Error("Expected error for invalid country")
 	}
 }
 
 func TestAvailableCountries(t *testing.T) {
-	countries := AvailableCountries()
+	countries := AvailableCountries("data")
 	if len(countries) == 0 {
 		t.Error("Expected at least one country")
 	}
