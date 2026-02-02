@@ -103,7 +103,7 @@ func (t *TextWriter) Write(results []ServerResult, stats ScanStats) error {
 	return nil
 }
 
-func PrintBanner(w io.Writer, cfg *Config, totalIPs int, version string) {
+func printBanner(w io.Writer, cfg *Config, totalIPs int, version string) {
 	if !cfg.Progress {
 		fmt.Fprintf(w, "Scanning %d IPs...\n", totalIPs)
 		return
@@ -124,7 +124,7 @@ func PrintBanner(w io.Writer, cfg *Config, totalIPs int, version string) {
 	fmt.Fprintf(w, "---\n")
 }
 
-func PrintUsageHint(w io.Writer, ips []string, domain string) {
+func printUsageHint(w io.Writer, ips []string, domain string) {
 	if len(ips) == 0 {
 		return
 	}

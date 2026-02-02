@@ -86,13 +86,10 @@ func TestE2EBasicScan(t *testing.T) {
 	defer mock.Close()
 
 	scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
-	working, suspicious := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
 	if len(working) != 1 {
 		t.Errorf("Expected 1 working, got %d", len(working))
-	}
-	if suspicious != 0 {
-		t.Errorf("Public IP should not be suspicious, got %d", suspicious)
 	}
 }
 
@@ -104,13 +101,10 @@ func TestE2EHijackingDetection(t *testing.T) {
 	defer mock.Close()
 
 	scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
-	working, suspicious := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
 	if len(working) != 0 {
 		t.Errorf("Private IP response should not be working, got %d", len(working))
-	}
-	if suspicious != 1 {
-		t.Errorf("Private IP response should be suspicious, got %d", suspicious)
 	}
 }
 
@@ -122,7 +116,7 @@ func TestE2EDomainVerification(t *testing.T) {
 	defer mock.Close()
 
 	scanner := NewScanner(1, 2*time.Second, mock.port, "test.example.com", 1, nil, false)
-	working, _ := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
 	if len(working) != 1 {
 		t.Errorf("Domain verification should pass, got %d working", len(working))
@@ -168,7 +162,7 @@ func TestE2EWorkerPool(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	working, _ := scanner.Scan(ctx, sliceToChannel(ips))
+	working := scanner.Scan(ctx, sliceToChannel(ips))
 
 	if len(working) != 1 {
 		t.Errorf("Expected 1 working, got %d", len(working))
@@ -185,21 +179,18 @@ func TestE2EAllPrivateRanges(t *testing.T) {
 		}
 
 		scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
-		working, suspicious := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
+		working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 		mock.Close()
 
 		if len(working) != 0 {
 			t.Errorf("%s should not be working", ip)
-		}
-		if suspicious != 1 {
-			t.Errorf("%s should be suspicious", ip)
 		}
 	}
 }
 
 func TestE2ETimeout(t *testing.T) {
 	scanner := NewScanner(1, 100*time.Millisecond, 65534, "", 1, nil, false)
-	working, _ := scanner.Scan(context.Background(), sliceToChannel([]string{"127.0.0.1"}))
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{"127.0.0.1"}))
 
 	if len(working) != 0 {
 		t.Error("Non-responsive should not be working")

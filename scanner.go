@@ -48,13 +48,15 @@ func NewScanner(workers int, timeout time.Duration, port int, verifyDomain strin
 	}
 }
 
-func (s *Scanner) Scan(ctx context.Context, ips <-chan string) (working []string, suspicious int) {
+func (s *Scanner) Scan(ctx context.Context, ips <-chan string) []string {
 	prog := NewProgress(s.total, s.showProgress)
 
 	tickCtx, stopTick := context.WithCancel(ctx)
 	defer stopTick()
 	go s.tick(tickCtx, prog)
 
+	var working []string
+	var suspicious int
 	for result := range s.run(ctx, ips, prog) {
 		if result.Suspicious {
 			suspicious++
@@ -65,7 +67,7 @@ func (s *Scanner) Scan(ctx context.Context, ips <-chan string) (working []string
 	}
 
 	s.summary(prog, suspicious)
-	return
+	return working
 }
 
 func (s *Scanner) tick(ctx context.Context, prog *Progress) {

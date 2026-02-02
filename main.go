@@ -24,17 +24,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	app, err := NewApp(cfg)
+	source, err := newIPSource(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	defer app.Close()
 
-	ips := app.source.IPs()
-	totalIPs := app.source.Count()
+	var outFile *os.File
+	if cfg.OutputFile != "" {
+		outFile, err = os.Create(cfg.OutputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		defer outFile.Close()
+	}
 
-	PrintBanner(os.Stderr, cfg, totalIPs, version)
+	ips := source.IPs()
+	totalIPs := source.Count()
+
+	printBanner(os.Stderr, cfg, totalIPs, version)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -49,18 +58,14 @@ func main() {
 		cancel()
 	}()
 
-	// Phase 1: Scan
 	scanner := NewScanner(cfg.Workers, cfg.Timeout, 53, cfg.Domain, totalIPs, os.Stderr, cfg.Progress)
-	workingDNS, suspiciousCount := scanner.Scan(ctx, ips)
-	_ = suspiciousCount
+	workingDNS := scanner.Scan(ctx, ips)
 
-	// Phase 2: Verify (optional)
 	if cfg.VerifyBinary != "" && len(workingDNS) > 0 {
 		verifier := NewSlipstreamVerifier(cfg.VerifyBinary, cfg.Domain, cfg.Timeout, os.Stderr, cfg.Progress)
 		workingDNS = verifier.Verify(ctx, workingDNS)
 	}
 
-	// Phase 3: Benchmark (optional)
 	var benchResults []*BenchmarkResult
 	if cfg.Domain != "" && len(workingDNS) > 0 {
 		benchmarker := NewBenchmarker(cfg.Domain, 53, cfg.Timeout, os.Stderr, cfg.Progress)
@@ -73,6 +78,20 @@ func main() {
 	}
 
 	// Output results
+	writeResults(cfg, outFile, workingDNS, benchResults, totalIPs)
+}
+
+func newIPSource(cfg *Config) (IPSource, error) {
+	if cfg.InputFile != "" {
+		return NewFileSource(cfg.InputFile)
+	}
+	if cfg.Mode == "list" {
+		return NewDNSListSource(cfg.DataDir, cfg.Country)
+	}
+	return NewCIDRSource(cfg.DataDir, cfg.Country, cfg.Mode)
+}
+
+func writeResults(cfg *Config, outFile *os.File, workingDNS []string, benchResults []*BenchmarkResult, totalIPs int) {
 	var serverResults []ServerResult
 	if len(benchResults) > 0 {
 		for _, r := range benchResults {
@@ -89,28 +108,28 @@ func main() {
 		}
 	}
 
-	outputStats := ScanStats{
+	stats := ScanStats{
 		TotalScanned: int64(totalIPs),
 		Found:        int64(len(serverResults)),
 	}
 	if cfg.InputFile == "" {
-		outputStats.Country = cfg.Country
-		outputStats.Mode = cfg.Mode
+		stats.Country = cfg.Country
+		stats.Mode = cfg.Mode
 	}
 
 	var out io.Writer = os.Stdout
-	if app.outFile != nil {
-		out = app.outFile
+	if outFile != nil {
+		out = outFile
 	}
 
 	if cfg.JSONOutput {
-		NewJSONWriter(out).Write(serverResults, outputStats)
+		NewJSONWriter(out).Write(serverResults, stats)
 	} else {
-		if app.outFile != nil || !cfg.Progress {
-			NewTextWriter(out).Write(serverResults, outputStats)
+		if outFile != nil || !cfg.Progress {
+			NewTextWriter(out).Write(serverResults, stats)
 		}
 		if cfg.Progress {
-			PrintUsageHint(os.Stderr, workingDNS, cfg.Domain)
+			printUsageHint(os.Stderr, workingDNS, cfg.Domain)
 		}
 	}
 }
