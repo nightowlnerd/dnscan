@@ -11,6 +11,27 @@ import (
 
 var binaryPath string
 
+// Test-local types for parsing JSON output
+type testJSONOutput struct {
+	Servers []testJSONServer `json:"servers"`
+	Scan    testJSONScan     `json:"scan"`
+}
+
+type testJSONServer struct {
+	IP          string  `json:"ip"`
+	QPS         float64 `json:"qps,omitempty"`
+	SuccessRate float64 `json:"success_rate,omitempty"`
+	LatencyP50  int64   `json:"latency_p50_ms,omitempty"`
+}
+
+type testJSONScan struct {
+	Country      string `json:"country,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	TotalScanned int64  `json:"total_scanned"`
+	Found        int64  `json:"found"`
+	DurationMs   int64  `json:"duration_ms"`
+}
+
 func TestMain(m *testing.M) {
 	// Build binary once for all integration tests
 	dir, _ := os.MkdirTemp("", "dnscan-test")
@@ -181,7 +202,7 @@ func TestJSONOutputFlag(t *testing.T) {
 	)
 	out, _ := cmd.Output()
 
-	var result JSONOutput
+	var result testJSONOutput
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, out)
 	}

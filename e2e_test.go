@@ -331,7 +331,7 @@ func TestBurstProgress(t *testing.T) {
 	}
 }
 
-func TestE2EJSONServerFromBurstResult(t *testing.T) {
+func TestE2EBurstResultMetrics(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
@@ -340,24 +340,16 @@ func TestE2EJSONServerFromBurstResult(t *testing.T) {
 
 	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
-	server := JSONServer{
-		IP:          result.IP,
-		QPS:         result.QPS(),
-		SuccessRate: result.SuccessRate(),
-		LatencyP50:  result.P50().Milliseconds(),
+	if result.IP != mock.ip {
+		t.Errorf("IP mismatch: got %s, expected %s", result.IP, mock.ip)
 	}
-
-	if server.IP != mock.ip {
-		t.Errorf("IP mismatch: got %s, expected %s", server.IP, mock.ip)
-	}
-	if server.QPS <= 0 {
+	if result.QPS() <= 0 {
 		t.Error("QPS should be positive")
 	}
-	if server.SuccessRate < 70 {
-		t.Errorf("SuccessRate too low: %.1f", server.SuccessRate)
+	if result.SuccessRate() < 70 {
+		t.Errorf("SuccessRate too low: %.1f", result.SuccessRate())
 	}
-	// LatencyP50 can be 0ms for localhost mock (sub-millisecond response)
-	if server.LatencyP50 < 0 {
-		t.Error("LatencyP50 should not be negative")
+	if result.P50() < 0 {
+		t.Error("P50 latency should not be negative")
 	}
 }

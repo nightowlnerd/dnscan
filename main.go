@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,29 +32,6 @@ func readIPsFromFile(path string) ([]string, error) {
 		}
 	}
 	return ips, scanner.Err()
-}
-
-// JSONOutput is the structured output format for --json flag
-type JSONOutput struct {
-	Servers []JSONServer `json:"servers"`
-	Scan    JSONScan     `json:"scan"`
-}
-
-// JSONServer represents a single DNS server in JSON output
-type JSONServer struct {
-	IP          string  `json:"ip"`
-	QPS         float64 `json:"qps,omitempty"`
-	SuccessRate float64 `json:"success_rate,omitempty"`
-	LatencyP50  int64   `json:"latency_p50_ms,omitempty"`
-}
-
-// JSONScan contains scan metadata
-type JSONScan struct {
-	Country      string `json:"country,omitempty"`
-	Mode         string `json:"mode,omitempty"`
-	TotalScanned int64  `json:"total_scanned"`
-	Found        int64  `json:"found"`
-	DurationMs   int64  `json:"duration_ms"`
 }
 
 // verifyWithSlipstream tests if a DNS server actually works with slipstream-client
@@ -159,24 +135,7 @@ func main() {
 		ips = ExpandRangesWithMode(ranges, cfg.Mode)
 	}
 
-	if cfg.Progress {
-		fmt.Fprintf(os.Stderr, "dnscan %s\n", version)
-		if cfg.InputFile != "" {
-			fmt.Fprintf(os.Stderr, "Source: %s | Workers: %d | Timeout: %v\n", cfg.InputFile, cfg.Workers, cfg.Timeout)
-		} else {
-			fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", cfg.Country, cfg.Mode, cfg.Workers, cfg.Timeout)
-		}
-		if cfg.Domain != "" {
-			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", cfg.Domain)
-		} else {
-			fmt.Fprintf(os.Stderr, "WARNING: No --domain set. Finding generic DNS, not tunnel-compatible!\n")
-			fmt.Fprintf(os.Stderr, "         Use: --domain t.example.com for slipstream compatibility\n")
-		}
-		fmt.Fprintf(os.Stderr, "IPs to scan: %d\n", totalIPs)
-		fmt.Fprintf(os.Stderr, "---\n")
-	} else {
-		fmt.Fprintf(os.Stderr, "Scanning %d IPs...\n", totalIPs)
-	}
+	PrintBanner(os.Stderr, cfg, totalIPs, version)
 
 	// Setup context with signal handling
 	ctx, cancel := context.WithCancel(context.Background())
@@ -419,77 +378,48 @@ resultLoop:
 		}
 	}
 
-	// Get final stats
 	scanned, _, _, elapsed := prog.Stats()
 
-	// Write results
-	if cfg.JSONOutput {
-		output := JSONOutput{
-			Servers: []JSONServer{},
-			Scan: JSONScan{
-				TotalScanned: scanned,
-				Found:        int64(len(workingDNS)),
-				DurationMs:   elapsed.Milliseconds(),
-			},
+	var serverResults []ServerResult
+	if len(burstResults) > 0 {
+		for _, r := range burstResults {
+			serverResults = append(serverResults, ServerResult{
+				IP:          r.IP,
+				QPS:         r.QPS(),
+				SuccessRate: r.SuccessRate(),
+				LatencyP50:  r.P50(),
+			})
 		}
-		if cfg.InputFile == "" {
-			output.Scan.Country = cfg.Country
-			output.Scan.Mode = cfg.Mode
-		}
-
-		// Build server list with stats if available
-		if len(burstResults) > 0 {
-			for _, r := range burstResults {
-				output.Servers = append(output.Servers, JSONServer{
-					IP:          r.IP,
-					QPS:         r.QPS(),
-					SuccessRate: r.SuccessRate(),
-					LatencyP50:  r.P50().Milliseconds(),
-				})
-			}
-		} else {
-			for _, ip := range workingDNS {
-				output.Servers = append(output.Servers, JSONServer{IP: ip})
-			}
-		}
-
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if outFile != nil {
-			enc = json.NewEncoder(outFile)
-			enc.SetIndent("", "  ")
-		}
-		enc.Encode(output)
 	} else {
-		// Plain text output - skip stdout when progress shows colored stats
-		if len(workingDNS) > 0 {
-			if outFile != nil {
-				for _, ip := range workingDNS {
-					fmt.Fprintln(outFile, ip)
-				}
-			} else if !cfg.Progress {
-				for _, ip := range workingDNS {
-					fmt.Println(ip)
-				}
-			}
+		for _, ip := range workingDNS {
+			serverResults = append(serverResults, ServerResult{IP: ip})
 		}
+	}
 
-		// Print usage hint
-		if cfg.Progress && len(workingDNS) > 0 {
-			showDomain := cfg.Domain
-			if showDomain == "" {
-				showDomain = "<domain>"
-			}
-			max := 10
-			if len(workingDNS) < max {
-				max = len(workingDNS)
-			}
-			fmt.Fprintf(os.Stderr, "\nUsage:\n  slipstream-client \\\n")
-			for i := 0; i < max; i++ {
-				fmt.Fprintf(os.Stderr, "    --resolver %s:53 \\\n", workingDNS[i])
-			}
-			fmt.Fprintf(os.Stderr, "    --domain %s \\\n", showDomain)
-			fmt.Fprintf(os.Stderr, "    --tcp-listen-port 7000\n")
+	stats := ScanStats{
+		TotalScanned: scanned,
+		Found:        int64(len(serverResults)),
+		Duration:     elapsed,
+	}
+	if cfg.InputFile == "" {
+		stats.Country = cfg.Country
+		stats.Mode = cfg.Mode
+	}
+
+	// Write output
+	out := os.Stdout
+	if outFile != nil {
+		out = outFile
+	}
+
+	if cfg.JSONOutput {
+		NewJSONWriter(out).Write(serverResults, stats)
+	} else {
+		if outFile != nil || !cfg.Progress {
+			NewTextWriter(out).Write(serverResults, stats)
+		}
+		if cfg.Progress {
+			PrintUsageHint(os.Stderr, workingDNS, cfg.Domain)
 		}
 	}
 }
