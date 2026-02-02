@@ -77,7 +77,6 @@ func main() {
 		}
 	}
 
-	// Output results
 	writeResults(cfg, outFile, workingDNS, benchResults, totalIPs)
 }
 
