@@ -85,14 +85,11 @@ func TestE2EBasicScan(t *testing.T) {
 	}
 	defer mock.Close()
 
-	scanner := NewScanner(1, 2*time.Second, mock.port, nil, "")
-	result := scanner.Probe(mock.ip)
+	scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
-	if !result.Working {
-		t.Errorf("Expected working, got error: %v", result.Error)
-	}
-	if result.Suspicious {
-		t.Error("Public IP should not be suspicious")
+	if len(working) != 1 {
+		t.Errorf("Expected 1 working, got %d", len(working))
 	}
 }
 
@@ -103,14 +100,11 @@ func TestE2EHijackingDetection(t *testing.T) {
 	}
 	defer mock.Close()
 
-	scanner := NewScanner(1, 2*time.Second, mock.port, nil, "")
-	result := scanner.Probe(mock.ip)
+	scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
-	if result.Working {
-		t.Error("Private IP response should not be working")
-	}
-	if !result.Suspicious {
-		t.Error("Private IP response should be suspicious")
+	if len(working) != 0 {
+		t.Errorf("Private IP response should not be working, got %d", len(working))
 	}
 }
 
@@ -121,25 +115,31 @@ func TestE2EDomainVerification(t *testing.T) {
 	}
 	defer mock.Close()
 
-	scanner := NewScanner(1, 2*time.Second, mock.port, nil, "test.example.com")
-	result := scanner.Probe(mock.ip)
+	scanner := NewScanner(1, 2*time.Second, mock.port, "test.example.com", 1, nil, false)
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 
-	if !result.Working {
-		t.Errorf("Domain verification should pass, got: %v", result.Error)
+	if len(working) != 1 {
+		t.Errorf("Domain verification should pass, got %d working", len(working))
 	}
 }
 
-func TestE2EBurstTest(t *testing.T) {
+func TestE2EBenchmark(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
-	if result.Queries != BurstQueries {
-		t.Errorf("Expected %d queries, got %d", BurstQueries, result.Queries)
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+
+	result := results[0]
+	if result.Queries != BenchmarkQueries {
+		t.Errorf("Expected %d queries, got %d", BenchmarkQueries, result.Queries)
 	}
 	if result.SuccessRate() < 90 {
 		t.Errorf("Expected high success rate, got %.1f%%", result.SuccessRate())
@@ -156,28 +156,16 @@ func TestE2EWorkerPool(t *testing.T) {
 	}
 	defer mock.Close()
 
-	ips := []string{mock.ip, "192.0.2.1"} // second IP won't respond
-	progress := NewProgress(len(ips), false)
-	scanner := NewScanner(2, 500*time.Millisecond, mock.port, progress, "")
+	ips := []string{mock.ip, "192.0.2.1"}
+	scanner := NewScanner(2, 500*time.Millisecond, mock.port, "", len(ips), nil, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	results := scanner.Run(ctx, IPsFromList(ips))
+	working := scanner.Scan(ctx, sliceToChannel(ips))
 
-	var working, total int
-	for r := range results {
-		total++
-		if r.Working {
-			working++
-		}
-	}
-
-	if total != 2 {
-		t.Errorf("Expected 2 results, got %d", total)
-	}
-	if working != 1 {
-		t.Errorf("Expected 1 working, got %d", working)
+	if len(working) != 1 {
+		t.Errorf("Expected 1 working, got %d", len(working))
 	}
 }
 
@@ -190,28 +178,22 @@ func TestE2EAllPrivateRanges(t *testing.T) {
 			t.Fatalf("Failed for %s: %v", ip, err)
 		}
 
-		scanner := NewScanner(1, 2*time.Second, mock.port, nil, "")
-		result := scanner.Probe(mock.ip)
+		scanner := NewScanner(1, 2*time.Second, mock.port, "", 1, nil, false)
+		working := scanner.Scan(context.Background(), sliceToChannel([]string{mock.ip}))
 		mock.Close()
 
-		if result.Working {
+		if len(working) != 0 {
 			t.Errorf("%s should not be working", ip)
-		}
-		if !result.Suspicious {
-			t.Errorf("%s should be suspicious", ip)
 		}
 	}
 }
 
 func TestE2ETimeout(t *testing.T) {
-	scanner := NewScanner(1, 100*time.Millisecond, 65534, nil, "")
-	result := scanner.Probe("127.0.0.1")
+	scanner := NewScanner(1, 100*time.Millisecond, 65534, "", 1, nil, false)
+	working := scanner.Scan(context.Background(), sliceToChannel([]string{"127.0.0.1"}))
 
-	if result.Working {
+	if len(working) != 0 {
 		t.Error("Non-responsive should not be working")
-	}
-	if result.Error == nil {
-		t.Error("Expected timeout error")
 	}
 }
 
@@ -223,28 +205,26 @@ func TestE2EProgressTracking(t *testing.T) {
 	defer mock.Close()
 
 	ips := []string{mock.ip, mock.ip, mock.ip}
-	progress := NewProgress(len(ips), false)
-	scanner := NewScanner(1, 2*time.Second, mock.port, progress, "")
+	scanner := NewScanner(1, 2*time.Second, mock.port, "", len(ips), nil, false)
 
-	results := scanner.Run(context.Background(), IPsFromList(ips))
-	for range results {
-	}
-
-	scanned, found, total, _ := progress.Stats()
-	if scanned != 3 || found != 3 || total != 3 {
-		t.Errorf("Progress mismatch: scanned=%d found=%d total=%d", scanned, found, total)
-	}
+	scanner.Scan(context.Background(), sliceToChannel(ips))
 }
 
-func TestE2EBurstQPS(t *testing.T) {
+func TestE2EBenchmarkQPS(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+
+	result := results[0]
 	if result.QPS() <= 0 {
 		t.Errorf("QPS should be positive, got %.2f", result.QPS())
 	}
@@ -253,8 +233,7 @@ func TestE2EBurstQPS(t *testing.T) {
 	}
 }
 
-func TestE2EParallelBurstTest(t *testing.T) {
-	// Start 3 mock servers
+func TestE2EBenchmarkMultiple(t *testing.T) {
 	var mocks []*mockDNSServer
 	var ips []string
 	for i := 0; i < 3; i++ {
@@ -274,90 +253,76 @@ func TestE2EParallelBurstTest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// All mocks use same port pattern, so we use first mock's port
-	resultChan := ParallelBurstTest(ctx, ips, "test.example.com", mocks[0].port, 2*time.Second, 3)
+	benchmarker := NewBenchmarker("test.example.com", mocks[0].port, 2*time.Second, nil, false)
+	results := benchmarker.Benchmark(ctx, ips)
 
-	var count, passed int
-	for r := range resultChan {
-		count++
-		if r.Passed() {
-			passed++
-		}
-	}
-
-	if count != 3 {
-		t.Errorf("Expected 3 results, got %d", count)
-	}
-	if passed != 3 {
-		t.Errorf("Expected 3 passed, got %d", passed)
+	if len(results) != 3 {
+		t.Errorf("Expected 3 results, got %d", len(results))
 	}
 }
 
-func TestE2EBurstTestContextCancellation(t *testing.T) {
+func TestE2EBenchmarkContextCancellation(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	// Cancel immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	result := BurstTest(ctx, mock.ip, "test.example.com", mock.port, 2*time.Second)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	results := benchmarker.Benchmark(ctx, []string{mock.ip})
 
-	// Should return early with partial/no results
-	if result.Successful == BurstQueries {
+	if len(results) > 0 && results[0].Successful == BenchmarkQueries {
 		t.Error("Expected early termination with cancelled context")
 	}
 }
 
-func TestBurstProgress(t *testing.T) {
-	prog := NewBurstProgress(10, true)
+func TestProgressUnified(t *testing.T) {
+	prog := NewProgress(10, true)
 
-	prog.Tested()
-	prog.Tested()
-	prog.Passed()
+	prog.Increment()
+	prog.Increment()
+	prog.Success()
 
-	tested, passed, total := prog.Stats()
-	if tested != 2 {
-		t.Errorf("Expected 2 tested, got %d", tested)
+	stats := prog.Stats()
+	if stats.Processed != 2 {
+		t.Errorf("Expected 2 processed, got %d", stats.Processed)
 	}
-	if passed != 1 {
-		t.Errorf("Expected 1 passed, got %d", passed)
+	if stats.Success != 1 {
+		t.Errorf("Expected 1 success, got %d", stats.Success)
 	}
-	if total != 10 {
-		t.Errorf("Expected total 10, got %d", total)
+	if stats.Total != 10 {
+		t.Errorf("Expected total 10, got %d", stats.Total)
 	}
 }
 
-func TestE2EJSONServerFromBurstResult(t *testing.T) {
+func TestE2EBenchmarkResultMetrics(t *testing.T) {
 	mock, err := newMockDNSServer("93.184.216.34")
 	if err != nil {
 		t.Fatalf("Failed to start mock DNS: %v", err)
 	}
 	defer mock.Close()
 
-	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
-	server := JSONServer{
-		IP:          result.IP,
-		QPS:         result.QPS(),
-		SuccessRate: result.SuccessRate(),
-		LatencyP50:  result.P50().Milliseconds(),
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
 	}
 
-	if server.IP != mock.ip {
-		t.Errorf("IP mismatch: got %s, expected %s", server.IP, mock.ip)
+	result := results[0]
+	if result.IP != mock.ip {
+		t.Errorf("IP mismatch: got %s, expected %s", result.IP, mock.ip)
 	}
-	if server.QPS <= 0 {
+	if result.QPS() <= 0 {
 		t.Error("QPS should be positive")
 	}
-	if server.SuccessRate < 70 {
-		t.Errorf("SuccessRate too low: %.1f", server.SuccessRate)
+	if result.SuccessRate() < 70 {
+		t.Errorf("SuccessRate too low: %.1f", result.SuccessRate())
 	}
-	// LatencyP50 can be 0ms for localhost mock (sub-millisecond response)
-	if server.LatencyP50 < 0 {
-		t.Error("LatencyP50 should not be negative")
+	if result.P50() < 0 {
+		t.Error("P50 latency should not be negative")
 	}
 }

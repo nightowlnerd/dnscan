@@ -11,6 +11,27 @@ import (
 
 var binaryPath string
 
+// Test-local types for parsing JSON output
+type testJSONOutput struct {
+	Servers []testJSONServer `json:"servers"`
+	Scan    testJSONScan     `json:"scan"`
+}
+
+type testJSONServer struct {
+	IP          string  `json:"ip"`
+	QPS         float64 `json:"qps,omitempty"`
+	SuccessRate float64 `json:"success_rate,omitempty"`
+	LatencyP50  int64   `json:"latency_p50_ms,omitempty"`
+}
+
+type testJSONScan struct {
+	Country      string `json:"country,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	TotalScanned int64  `json:"total_scanned"`
+	Found        int64  `json:"found"`
+	DurationMs   int64  `json:"duration_ms"`
+}
+
 func TestMain(m *testing.M) {
 	// Build binary once for all integration tests
 	dir, _ := os.MkdirTemp("", "dnscan-test")
@@ -47,8 +68,8 @@ func TestInvalidMode(t *testing.T) {
 		t.Error("expected error for invalid mode")
 	}
 
-	if !strings.Contains(string(out), "Invalid mode") {
-		t.Errorf("expected 'Invalid mode' error, got: %s", out)
+	if !strings.Contains(string(out), "invalid mode") {
+		t.Errorf("expected 'invalid mode' error, got: %s", out)
 	}
 }
 
@@ -60,8 +81,8 @@ func TestFileInputNotFound(t *testing.T) {
 		t.Error("expected error for missing file")
 	}
 
-	if !strings.Contains(string(out), "Failed to read file") {
-		t.Errorf("expected 'Failed to read file' error, got: %s", out)
+	if !strings.Contains(string(out), "failed to open") {
+		t.Errorf("expected 'failed to open' error, got: %s", out)
 	}
 }
 
@@ -144,7 +165,7 @@ func TestProgressFlagDisabled(t *testing.T) {
 	}
 }
 
-func TestReadIPsFromFile(t *testing.T) {
+func TestLoadLines(t *testing.T) {
 	// Create temp file
 	f, _ := os.CreateTemp("", "ips-*.txt")
 	f.WriteString("# comment line\n")
@@ -154,9 +175,9 @@ func TestReadIPsFromFile(t *testing.T) {
 	f.Close()
 	defer os.Remove(f.Name())
 
-	ips, err := readIPsFromFile(f.Name())
+	ips, err := loadLines(f.Name())
 	if err != nil {
-		t.Fatalf("readIPsFromFile failed: %v", err)
+		t.Fatalf("loadLines failed: %v", err)
 	}
 
 	if len(ips) != 2 {
@@ -181,7 +202,7 @@ func TestJSONOutputFlag(t *testing.T) {
 	)
 	out, _ := cmd.Output()
 
-	var result JSONOutput
+	var result testJSONOutput
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, out)
 	}

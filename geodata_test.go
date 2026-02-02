@@ -6,24 +6,28 @@ import (
 	"testing"
 )
 
-func TestLoadRanges(t *testing.T) {
-	ranges, err := LoadRanges("ir")
+func TestLoadCIDRBlocks(t *testing.T) {
+	if !CIDRBlocksExist("data", "ir") {
+		if err := DownloadCIDRBlocks("data", "ir"); err != nil {
+			t.Fatalf("DownloadCIDRBlocks failed: %v", err)
+		}
+	}
+	ranges, err := LoadCIDRBlocks("data", "ir")
 	if err != nil {
-		t.Fatalf("LoadRanges failed: %v", err)
+		t.Fatalf("LoadCIDRBlocks failed: %v", err)
 	}
 	if len(ranges) == 0 {
 		t.Error("Expected non-empty ranges")
 	}
-	// Check first range is valid CIDR
 	if ranges[0] == "" {
 		t.Error("First range is empty")
 	}
 }
 
-func TestLoadDNSList(t *testing.T) {
-	dns, err := LoadDNSList("ir")
+func TestLoadKnownDNS(t *testing.T) {
+	dns, err := LoadKnownDNS("data", "ir")
 	if err != nil {
-		t.Fatalf("LoadDNSList failed: %v", err)
+		t.Fatalf("LoadKnownDNS failed: %v", err)
 	}
 	if len(dns) == 0 {
 		t.Error("Expected non-empty DNS list")
@@ -41,15 +45,15 @@ func TestLoadDNSList(t *testing.T) {
 	}
 }
 
-func TestLoadRangesInvalidCountry(t *testing.T) {
-	_, err := LoadRanges("xx")
+func TestDownloadCIDRBlocksInvalidCountry(t *testing.T) {
+	err := DownloadCIDRBlocks("data", "xx")
 	if err == nil {
 		t.Error("Expected error for invalid country")
 	}
 }
 
 func TestAvailableCountries(t *testing.T) {
-	countries := AvailableCountries()
+	countries := AvailableCountries("data")
 	if len(countries) == 0 {
 		t.Error("Expected at least one country")
 	}

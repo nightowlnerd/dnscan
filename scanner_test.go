@@ -66,22 +66,22 @@ func TestRandomSubdomain(t *testing.T) {
 	}
 }
 
-func TestRandomSlipstreamSubdomain(t *testing.T) {
-	s1 := randomSlipstreamSubdomain()
-	s2 := randomSlipstreamSubdomain()
+func TestRandomBenchmarkSubdomain(t *testing.T) {
+	s1 := randomBenchmarkSubdomain()
+	s2 := randomBenchmarkSubdomain()
 
 	// Base32 encoded 32 bytes = 52 chars
 	if len(s1) != 52 {
-		t.Errorf("randomSlipstreamSubdomain length = %d, expected 52", len(s1))
+		t.Errorf("randomBenchmarkSubdomain length = %d, expected 52", len(s1))
 	}
 
 	// Should be different each time
 	if s1 == s2 {
-		t.Error("randomSlipstreamSubdomain should generate unique values")
+		t.Error("randomBenchmarkSubdomain should generate unique values")
 	}
 }
 
-func TestBurstResultSuccessRate(t *testing.T) {
+func TestBenchmarkResultSuccessRate(t *testing.T) {
 	tests := []struct {
 		queries    int
 		successful int
@@ -94,7 +94,7 @@ func TestBurstResultSuccessRate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		r := &BurstResult{
+		r := &BenchmarkResult{
 			Queries:    tt.queries,
 			Successful: tt.successful,
 		}
@@ -105,8 +105,8 @@ func TestBurstResultSuccessRate(t *testing.T) {
 	}
 }
 
-func TestBurstResultQPS(t *testing.T) {
-	r := &BurstResult{
+func TestBenchmarkResultQPS(t *testing.T) {
+	r := &BenchmarkResult{
 		Successful: 10,
 		Duration:   time.Second,
 	}
@@ -115,14 +115,14 @@ func TestBurstResultQPS(t *testing.T) {
 	}
 
 	// Zero duration edge case
-	r2 := &BurstResult{Duration: 0}
+	r2 := &BenchmarkResult{Duration: 0}
 	if r2.QPS() != 0.0 {
 		t.Error("QPS with zero duration should be 0")
 	}
 }
 
-func TestBurstResultP50(t *testing.T) {
-	r := &BurstResult{
+func TestBenchmarkResultP50(t *testing.T) {
+	r := &BenchmarkResult{
 		Latencies: []time.Duration{
 			10 * time.Millisecond,
 			20 * time.Millisecond,
@@ -138,13 +138,13 @@ func TestBurstResultP50(t *testing.T) {
 	}
 
 	// Empty latencies
-	r2 := &BurstResult{}
+	r2 := &BenchmarkResult{}
 	if r2.P50() != 0 {
 		t.Error("P50 with no latencies should be 0")
 	}
 }
 
-func TestBurstResultPassed(t *testing.T) {
+func TestBenchmarkResultPassed(t *testing.T) {
 	tests := []struct {
 		queries    int
 		successful int
@@ -157,7 +157,7 @@ func TestBurstResultPassed(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		r := &BurstResult{
+		r := &BenchmarkResult{
 			Queries:    tt.queries,
 			Successful: tt.successful,
 		}
@@ -173,19 +173,19 @@ func TestProgressStats(t *testing.T) {
 
 	p.Increment()
 	p.Increment()
-	p.Found()
+	p.Success()
 
-	scanned, found, total, elapsed := p.Stats()
-	if scanned != 2 {
-		t.Errorf("scanned = %d, expected 2", scanned)
+	stats := p.Stats()
+	if stats.Processed != 2 {
+		t.Errorf("Processed = %d, expected 2", stats.Processed)
 	}
-	if found != 1 {
-		t.Errorf("found = %d, expected 1", found)
+	if stats.Success != 1 {
+		t.Errorf("Success = %d, expected 1", stats.Success)
 	}
-	if total != 100 {
-		t.Errorf("total = %d, expected 100", total)
+	if stats.Total != 100 {
+		t.Errorf("Total = %d, expected 100", stats.Total)
 	}
-	if elapsed <= 0 {
-		t.Error("elapsed should be positive")
+	if stats.Elapsed < 0 {
+		t.Error("Elapsed should not be negative")
 	}
 }

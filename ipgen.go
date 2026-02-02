@@ -16,14 +16,13 @@ var (
 	// all: every usable IP (generated dynamically)
 )
 
-// ExpandRangesWithMode expands CIDR ranges using the specified sampling mode
-func ExpandRangesWithMode(ranges []string, mode string) <-chan string {
+func ExpandCIDR(blocks []string, mode string) <-chan string {
 	out := make(chan string, 10000)
 
 	go func() {
 		defer close(out)
-		for _, cidr := range ranges {
-			for ip := range expandCIDRWithMode(cidr, mode) {
+		for _, block := range blocks {
+			for ip := range expandBlock(block, mode) {
 				out <- ip
 			}
 		}
@@ -32,8 +31,7 @@ func ExpandRangesWithMode(ranges []string, mode string) <-chan string {
 	return out
 }
 
-// expandCIDRWithMode generates IPs from a CIDR range based on mode
-func expandCIDRWithMode(cidr string, mode string) <-chan string {
+func expandBlock(cidr string, mode string) <-chan string {
 	out := make(chan string, 1000)
 
 	go func() {
@@ -87,22 +85,8 @@ func expandCIDRWithMode(cidr string, mode string) <-chan string {
 	return out
 }
 
-// IPsFromList converts a slice of IPs to a channel
-func IPsFromList(ips []string) <-chan string {
-	out := make(chan string, len(ips))
 
-	go func() {
-		defer close(out)
-		for _, ip := range ips {
-			out <- ip
-		}
-	}()
-
-	return out
-}
-
-// CountIPsWithMode estimates total IPs based on ranges and mode
-func CountIPsWithMode(ranges []string, mode string) int {
+func CountCIDRIPs(blocks []string, mode string) int {
 	var octetsPerSubnet int
 	switch mode {
 	case "fast":
@@ -116,7 +100,7 @@ func CountIPsWithMode(ranges []string, mode string) int {
 	}
 
 	total := 0
-	for _, cidr := range ranges {
+	for _, cidr := range blocks {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			continue
