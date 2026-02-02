@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -14,25 +15,25 @@ import (
 
 const probeDomain = "google.com"
 
-// ScanResult holds the outcome of probing a single DNS server.
 type ScanResult struct {
 	IP         string
 	Working    bool
-	Suspicious bool // true if server returned private IP (possible hijacking)
+	Suspicious bool
 	RTT        time.Duration
 	Error      error
 }
 
-// Scanner probes DNS servers for availability and hijacking detection.
 type Scanner struct {
 	workers      int
 	timeout      time.Duration
 	port         int
-	progress     *Progress
 	verifyDomain string
+	total        int
+	output       io.Writer
+	showProgress bool
 }
 
-func NewScanner(workers int, timeout time.Duration, port int, progress *Progress, verifyDomain string) *Scanner {
+func NewScanner(workers int, timeout time.Duration, port int, verifyDomain string, total int, output io.Writer, showProgress bool) *Scanner {
 	if port == 0 {
 		port = 53
 	}
@@ -40,13 +41,106 @@ func NewScanner(workers int, timeout time.Duration, port int, progress *Progress
 		workers:      workers,
 		timeout:      timeout,
 		port:         port,
-		progress:     progress,
 		verifyDomain: verifyDomain,
+		total:        total,
+		output:       output,
+		showProgress: showProgress,
 	}
 }
 
-// Probe tests a single IP for DNS availability.
-func (s *Scanner) Probe(ip string) ScanResult {
+func (s *Scanner) Scan(ctx context.Context, ips <-chan string) (working []string, suspicious int) {
+	prog := NewProgress(s.total, s.showProgress)
+
+	tickCtx, stopTick := context.WithCancel(ctx)
+	defer stopTick()
+	go s.tick(tickCtx, prog)
+
+	for result := range s.run(ctx, ips, prog) {
+		if result.Suspicious {
+			suspicious++
+		}
+		if result.Working {
+			working = append(working, result.IP)
+		}
+	}
+
+	s.summary(prog, suspicious)
+	return
+}
+
+func (s *Scanner) tick(ctx context.Context, prog *Progress) {
+	if !s.showProgress || s.output == nil {
+		return
+	}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			st := prog.Stats()
+			rate := float64(st.Processed) / st.Elapsed.Seconds()
+			pct := float64(st.Processed) / float64(st.Total) * 100
+			fmt.Fprintf(s.output, "\rScanned: %d/%d (%.1f%%) | Found: %d | %.0f IPs/sec   ",
+				st.Processed, st.Total, pct, st.Success, rate)
+		case <-ctx.Done():
+			fmt.Fprint(s.output, "\r\033[K")
+			return
+		}
+	}
+}
+
+func (s *Scanner) summary(prog *Progress, suspicious int) {
+	if !s.showProgress || s.output == nil {
+		return
+	}
+	st := prog.Stats()
+	fmt.Fprintf(s.output, "Completed: %d IPs in %v\n", st.Processed, st.Elapsed.Round(time.Millisecond))
+	fmt.Fprintf(s.output, "Found: %d DNS candidates\n", st.Success)
+	if suspicious > 0 {
+		fmt.Fprintf(s.output, "\033[33mWarning: %d servers returned private IPs (possible DNS hijacking)\033[0m\n", suspicious)
+	}
+}
+
+func (s *Scanner) run(ctx context.Context, ips <-chan string, prog *Progress) <-chan ScanResult {
+	results := make(chan ScanResult, s.workers)
+	var wg sync.WaitGroup
+
+	for i := 0; i < s.workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case ip, ok := <-ips:
+					if !ok {
+						return
+					}
+					result := s.probe(ip)
+					prog.Increment()
+					if result.Working {
+						prog.Success()
+					}
+					select {
+					case results <- result:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	return results
+}
+
+func (s *Scanner) probe(ip string) ScanResult {
 	client := &dns.Client{
 		Net:         "udp",
 		Timeout:     s.timeout,
@@ -95,48 +189,6 @@ func (s *Scanner) Probe(ip string) ScanResult {
 	}
 
 	return ScanResult{IP: ip, Working: true, RTT: rtt}
-}
-
-// Run starts a worker pool that probes IPs concurrently.
-func (s *Scanner) Run(ctx context.Context, ips <-chan string) <-chan ScanResult {
-	results := make(chan ScanResult, s.workers)
-	var wg sync.WaitGroup
-
-	for i := 0; i < s.workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case ip, ok := <-ips:
-					if !ok {
-						return
-					}
-					result := s.Probe(ip)
-					if s.progress != nil {
-						s.progress.Increment()
-						if result.Working {
-							s.progress.Success()
-						}
-					}
-					select {
-					case results <- result:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	return results
 }
 
 var privateRanges = []string{
