@@ -136,7 +136,7 @@ func TestE2EBurstTest(t *testing.T) {
 	}
 	defer mock.Close()
 
-	result := BurstTest(mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	if result.Queries != BurstQueries {
 		t.Errorf("Expected %d queries, got %d", BurstQueries, result.Queries)
@@ -243,13 +243,91 @@ func TestE2EBurstQPS(t *testing.T) {
 	}
 	defer mock.Close()
 
-	result := BurstTest(mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	if result.QPS() <= 0 {
 		t.Errorf("QPS should be positive, got %.2f", result.QPS())
 	}
 	if result.P50() <= 0 {
 		t.Errorf("P50 should be positive, got %v", result.P50())
+	}
+}
+
+func TestE2EParallelBurstTest(t *testing.T) {
+	// Start 3 mock servers
+	var mocks []*mockDNSServer
+	var ips []string
+	for i := 0; i < 3; i++ {
+		mock, err := newMockDNSServer("93.184.216.34")
+		if err != nil {
+			t.Fatalf("Failed to start mock %d: %v", i, err)
+		}
+		mocks = append(mocks, mock)
+		ips = append(ips, mock.ip)
+	}
+	defer func() {
+		for _, m := range mocks {
+			m.Close()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// All mocks use same port pattern, so we use first mock's port
+	resultChan := ParallelBurstTest(ctx, ips, "test.example.com", mocks[0].port, 2*time.Second, 3)
+
+	var count, passed int
+	for r := range resultChan {
+		count++
+		if r.Passed() {
+			passed++
+		}
+	}
+
+	if count != 3 {
+		t.Errorf("Expected 3 results, got %d", count)
+	}
+	if passed != 3 {
+		t.Errorf("Expected 3 passed, got %d", passed)
+	}
+}
+
+func TestE2EBurstTestContextCancellation(t *testing.T) {
+	mock, err := newMockDNSServer("93.184.216.34")
+	if err != nil {
+		t.Fatalf("Failed to start mock DNS: %v", err)
+	}
+	defer mock.Close()
+
+	// Cancel immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := BurstTest(ctx, mock.ip, "test.example.com", mock.port, 2*time.Second)
+
+	// Should return early with partial/no results
+	if result.Successful == BurstQueries {
+		t.Error("Expected early termination with cancelled context")
+	}
+}
+
+func TestBurstProgress(t *testing.T) {
+	prog := NewBurstProgress(10, true)
+
+	prog.Tested()
+	prog.Tested()
+	prog.Passed()
+
+	tested, passed, total := prog.Stats()
+	if tested != 2 {
+		t.Errorf("Expected 2 tested, got %d", tested)
+	}
+	if passed != 1 {
+		t.Errorf("Expected 1 passed, got %d", passed)
+	}
+	if total != 10 {
+		t.Errorf("Expected total 10, got %d", total)
 	}
 }
 
@@ -260,7 +338,7 @@ func TestE2EJSONServerFromBurstResult(t *testing.T) {
 	}
 	defer mock.Close()
 
-	result := BurstTest(mock.ip, "test.example.com", mock.port, 2*time.Second)
+	result := BurstTest(context.Background(), mock.ip, "test.example.com", mock.port, 2*time.Second)
 
 	server := JSONServer{
 		IP:          result.IP,

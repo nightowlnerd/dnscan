@@ -285,7 +285,7 @@ func (r *BurstResult) Passed() bool {
 }
 
 // BurstTest runs concurrent DNS queries to test server reliability under load
-func BurstTest(ip, domain string, port int, timeout time.Duration) *BurstResult {
+func BurstTest(ctx context.Context, ip, domain string, port int, timeout time.Duration) *BurstResult {
 	if port == 0 {
 		port = 53
 	}
@@ -308,12 +308,28 @@ func BurstTest(ip, domain string, port int, timeout time.Duration) *BurstResult 
 	start := time.Now()
 
 	for i := 0; i < BurstQueries; i++ {
+		select {
+		case <-ctx.Done():
+			result.Duration = time.Since(start)
+			return result
+		default:
+		}
+
 		wg.Add(1)
 		sem <- struct{}{}
 
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				result.Failed++
+				mu.Unlock()
+				return
+			default:
+			}
 
 			subdomain := randomSlipstreamSubdomain()
 			m := new(dns.Msg)
@@ -337,4 +353,72 @@ func BurstTest(ip, domain string, port int, timeout time.Duration) *BurstResult 
 	wg.Wait()
 	result.Duration = time.Since(start)
 	return result
+}
+
+// BurstProgress tracks parallel burst test progress with atomic counters
+type BurstProgress struct {
+	total   int64
+	tested  int64
+	passed  int64
+	enabled bool
+}
+
+func NewBurstProgress(total int, enabled bool) *BurstProgress {
+	return &BurstProgress{total: int64(total), enabled: enabled}
+}
+
+func (p *BurstProgress) Tested() { atomic.AddInt64(&p.tested, 1) }
+func (p *BurstProgress) Passed() { atomic.AddInt64(&p.passed, 1) }
+func (p *BurstProgress) Stats() (tested, passed, total int64) {
+	return atomic.LoadInt64(&p.tested), atomic.LoadInt64(&p.passed), p.total
+}
+
+// ParallelBurstTest runs burst tests on multiple IPs concurrently
+func ParallelBurstTest(ctx context.Context, ips []string, domain string, port int,
+	timeout time.Duration, workers int) <-chan *BurstResult {
+
+	results := make(chan *BurstResult, workers)
+	ipChan := make(chan string, len(ips))
+
+	go func() {
+		defer close(ipChan)
+		for _, ip := range ips {
+			select {
+			case ipChan <- ip:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case ip, ok := <-ipChan:
+					if !ok {
+						return
+					}
+					result := BurstTest(ctx, ip, domain, port, timeout)
+					select {
+					case results <- result:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	return results
 }
