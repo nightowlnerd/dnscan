@@ -20,6 +20,7 @@ type Config struct {
 	JSONOutput   bool
 	Progress     bool
 	ShowVersion  bool
+	Threshold    int
 }
 
 func ParseFlags() *Config {
@@ -37,6 +38,7 @@ func ParseFlags() *Config {
 	flag.StringVar(&c.VerifyBinary, "verify", "", "Path to slipstream-client binary")
 	flag.BoolVar(&c.ShowVersion, "version", false, "Show version")
 	flag.BoolVar(&c.JSONOutput, "json", false, "Output results as JSON")
+	flag.IntVar(&c.Threshold, "threshold", 70, "Minimum success rate for benchmark (0-100)")
 
 	flag.Parse()
 

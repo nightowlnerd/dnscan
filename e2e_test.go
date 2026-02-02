@@ -130,7 +130,7 @@ func TestE2EBenchmark(t *testing.T) {
 	}
 	defer mock.Close()
 
-	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, 70, nil, false)
 	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
 	if len(results) != 1 {
@@ -217,7 +217,7 @@ func TestE2EBenchmarkQPS(t *testing.T) {
 	}
 	defer mock.Close()
 
-	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, 70, nil, false)
 	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
 	if len(results) != 1 {
@@ -253,7 +253,7 @@ func TestE2EBenchmarkMultiple(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	benchmarker := NewBenchmarker("test.example.com", mocks[0].port, 2*time.Second, nil, false)
+	benchmarker := NewBenchmarker("test.example.com", mocks[0].port, 2*time.Second, 70, nil, false)
 	results := benchmarker.Benchmark(ctx, ips)
 
 	if len(results) != 3 {
@@ -271,7 +271,7 @@ func TestE2EBenchmarkContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, 70, nil, false)
 	results := benchmarker.Benchmark(ctx, []string{mock.ip})
 
 	if len(results) > 0 && results[0].Successful == BenchmarkQueries {
@@ -305,7 +305,7 @@ func TestE2EBenchmarkResultMetrics(t *testing.T) {
 	}
 	defer mock.Close()
 
-	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, nil, false)
+	benchmarker := NewBenchmarker("test.example.com", mock.port, 2*time.Second, 70, nil, false)
 	results := benchmarker.Benchmark(context.Background(), []string{mock.ip})
 
 	if len(results) != 1 {

@@ -14,7 +14,7 @@ Find working DNS servers for DNS tunnels during internet blackouts. Scans countr
 - 🧪 **Burst Testing** - Filters servers that respond to single queries but fail under real load (e.g., 1.1.1.1 shows 0% success)
 - 🛡️ **DNS Hijacking Detection** - Detects and warns when servers return private IPs
 - ⚡ **QPS Sorting** - Results sorted by throughput (queries per second)
-- 🎨 **Color Coding** - Green for ≥85% success, yellow for 70-84%
+- 🎨 **Color Coding** - Green for ≥threshold+15%, yellow for threshold to threshold+15%
 
 ## Use Case
 
@@ -63,6 +63,7 @@ go build -o dnscan .
 | `--progress` | true | Show progress bar |
 | `--verify` | - | Path to slipstream-client binary |
 | `--json` | false | Output results as JSON |
+| `--threshold` | 70 | Minimum success rate for benchmark (0-100) |
 
 ## Scan Modes
 

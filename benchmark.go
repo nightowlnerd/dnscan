@@ -70,21 +70,30 @@ type Benchmarker struct {
 	domain       string
 	port         int
 	timeout      time.Duration
+	threshold    int
 	output       io.Writer
 	showProgress bool
 }
 
-func NewBenchmarker(domain string, port int, timeout time.Duration, output io.Writer, showProgress bool) *Benchmarker {
+func NewBenchmarker(domain string, port int, timeout time.Duration, threshold int, output io.Writer, showProgress bool) *Benchmarker {
 	if port == 0 {
 		port = 53
+	}
+	if threshold <= 0 || threshold > 100 {
+		threshold = BenchmarkThreshold
 	}
 	return &Benchmarker{
 		domain:       domain,
 		port:         port,
 		timeout:      timeout,
+		threshold:    threshold,
 		output:       output,
 		showProgress: showProgress,
 	}
+}
+
+func (b *Benchmarker) passed(r *BenchmarkResult) bool {
+	return r.SuccessRate() >= float64(b.threshold)
 }
 
 func (b *Benchmarker) Benchmark(ctx context.Context, ips []string) []*BenchmarkResult {
@@ -137,9 +146,10 @@ func (b *Benchmarker) summary(results []*BenchmarkResult, total int) {
 	}
 	fmt.Fprintf(b.output, "\r\033[1;32mBenchmark: %d/%d | Passed: %d | sorted by QPS\033[0m          \n", total, total, len(results))
 	fmt.Fprintln(b.output, "---")
+	greenThreshold := float64(b.threshold + 15)
 	for _, r := range results {
 		color := "\033[33m"
-		if r.SuccessRate() >= 85 {
+		if r.SuccessRate() >= greenThreshold {
 			color = "\033[32m"
 		}
 		fmt.Fprintf(b.output, "%s%-15s %.0f%% (%.1f qps, p50=%v)\033[0m\n",
@@ -157,7 +167,7 @@ func (b *Benchmarker) sequential(ctx context.Context, ips []string, prog *Progre
 		}
 		result := b.benchmark(ctx, ip)
 		prog.Increment()
-		if result.Passed() {
+		if b.passed(result) {
 			prog.Success()
 			results = append(results, result)
 		}
@@ -214,7 +224,7 @@ func (b *Benchmarker) parallel(ctx context.Context, ips []string, prog *Progress
 	var results []*BenchmarkResult
 	for result := range resultChan {
 		prog.Increment()
-		if result.Passed() {
+		if b.passed(result) {
 			prog.Success()
 			results = append(results, result)
 		}
