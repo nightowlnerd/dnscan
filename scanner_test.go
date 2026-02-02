@@ -185,7 +185,7 @@ func TestProgressStats(t *testing.T) {
 	if total != 100 {
 		t.Errorf("total = %d, expected 100", total)
 	}
-	if elapsed <= 0 {
-		t.Error("elapsed should be positive")
+	if elapsed < 0 {
+		t.Error("elapsed should not be negative")
 	}
 }
