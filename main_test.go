@@ -47,8 +47,8 @@ func TestInvalidMode(t *testing.T) {
 		t.Error("expected error for invalid mode")
 	}
 
-	if !strings.Contains(string(out), "Invalid mode") {
-		t.Errorf("expected 'Invalid mode' error, got: %s", out)
+	if !strings.Contains(string(out), "invalid mode") {
+		t.Errorf("expected 'invalid mode' error, got: %s", out)
 	}
 }
 

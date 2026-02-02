@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,7 +15,8 @@ import (
 	"time"
 )
 
-// readIPsFromFile reads IPs from a file (one per line)
+var version = "dev"
+
 func readIPsFromFile(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -34,10 +34,6 @@ func readIPsFromFile(path string) ([]string, error) {
 	}
 	return ips, scanner.Err()
 }
-
-var (
-	version = "dev"
-)
 
 // JSONOutput is the structured output format for --json flag
 type JSONOutput struct {
@@ -109,66 +105,23 @@ func verifyWithSlipstream(clientPath, domain, ip string, timeout time.Duration) 
 }
 
 func main() {
-	// CLI flags
-	country := flag.String("country", "ir", "Country code for IP ranges (e.g., ir, cn)")
-	mode := flag.String("mode", "fast", "Scan mode: fast, medium, all, list")
-	workers := flag.Int("workers", 500, "Number of concurrent workers")
-	timeout := flag.Duration("timeout", 2*time.Second, "DNS query timeout")
-	output := flag.String("output", "", "Output file (default: stdout)")
-	inputFile := flag.String("file", "", "Input file with DNS IPs (one per line)")
-	dataDir := flag.String("data-dir", "data", "Directory containing ranges/ and dns/ subdirs")
-	progress := flag.Bool("progress", true, "Show progress indicator")
-	domain := flag.String("domain", "", "Tunnel domain to verify (e.g., t.example.com). Required for slipstream compatibility.")
-	verify := flag.String("verify", "", "Path to slipstream-client binary to verify candidates actually work")
-	showVersion := flag.Bool("version", false, "Show version")
-	jsonOutput := flag.Bool("json", false, "Output results as JSON")
-	flag.Parse()
+	cfg := ParseFlags()
 
-	// Set data directory
-	DataDir = *dataDir
-
-	// JSON mode disables progress - machine output only
-	if *jsonOutput {
-		*progress = false
-	}
-
-	if *showVersion {
+	if cfg.ShowVersion {
 		fmt.Printf("dnscan %s\n", version)
 		os.Exit(0)
 	}
 
-	// Validate mode
-	validModes := map[string]bool{"fast": true, "medium": true, "all": true, "list": true}
-	if !validModes[*mode] {
-		fmt.Fprintf(os.Stderr, "Invalid mode: %s (use: fast, medium, all, list)\n", *mode)
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Validate --verify binary if provided
-	if *verify != "" {
-		info, err := os.Stat(*verify)
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Verify binary not found: %s\n", *verify)
-			os.Exit(1)
-		}
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Cannot access verify binary: %v\n", err)
-			os.Exit(1)
-		}
-		if info.IsDir() {
-			fmt.Fprintf(os.Stderr, "Verify path is a directory, not a binary: %s\n", *verify)
-			os.Exit(1)
-		}
-		if info.Mode()&0111 == 0 {
-			fmt.Fprintf(os.Stderr, "Verify binary is not executable: %s\nRun: chmod +x %s\n", *verify, *verify)
-			os.Exit(1)
-		}
-	}
+	DataDir = cfg.DataDir
 
-	// Setup output
 	var outFile *os.File
-	if *output != "" {
-		f, err := os.Create(*output)
+	if cfg.OutputFile != "" {
+		f, err := os.Create(cfg.OutputFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to create output file: %v\n", err)
 			os.Exit(1)
@@ -177,49 +130,44 @@ func main() {
 		outFile = f
 	}
 
-	// Get IPs to scan
 	var ips <-chan string
 	var totalIPs int
 
-	if *inputFile != "" {
-		// Read from file
-		fileIPs, err := readIPsFromFile(*inputFile)
+	if cfg.InputFile != "" {
+		fileIPs, err := readIPsFromFile(cfg.InputFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to read file: %v\n", err)
 			os.Exit(1)
 		}
 		ips = IPsFromList(fileIPs)
 		totalIPs = len(fileIPs)
-	} else if *mode == "list" {
-		// Load known DNS servers for country
-		dnsList, err := LoadDNSList(*country)
+	} else if cfg.Mode == "list" {
+		dnsList, err := LoadDNSList(cfg.Country)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load DNS list for %s: %v\n", *country, err)
+			fmt.Fprintf(os.Stderr, "Failed to load DNS list for %s: %v\n", cfg.Country, err)
 			os.Exit(1)
 		}
 		ips = IPsFromList(dnsList)
 		totalIPs = len(dnsList)
 	} else {
-		// Load IP ranges for country
-		ranges, err := LoadRanges(*country)
+		ranges, err := LoadRanges(cfg.Country)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to load ranges for %s: %v\n", *country, err)
+			fmt.Fprintf(os.Stderr, "Failed to load ranges for %s: %v\n", cfg.Country, err)
 			os.Exit(1)
 		}
-		totalIPs = CountIPsWithMode(ranges, *mode)
-		ips = ExpandRangesWithMode(ranges, *mode)
+		totalIPs = CountIPsWithMode(ranges, cfg.Mode)
+		ips = ExpandRangesWithMode(ranges, cfg.Mode)
 	}
 
-	// Print header
-	if *progress {
+	if cfg.Progress {
 		fmt.Fprintf(os.Stderr, "dnscan %s\n", version)
-		if *inputFile != "" {
-			fmt.Fprintf(os.Stderr, "Source: %s | Workers: %d | Timeout: %v\n", *inputFile, *workers, *timeout)
+		if cfg.InputFile != "" {
+			fmt.Fprintf(os.Stderr, "Source: %s | Workers: %d | Timeout: %v\n", cfg.InputFile, cfg.Workers, cfg.Timeout)
 		} else {
-			fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", *country, *mode, *workers, *timeout)
+			fmt.Fprintf(os.Stderr, "Country: %s | Mode: %s | Workers: %d | Timeout: %v\n", cfg.Country, cfg.Mode, cfg.Workers, cfg.Timeout)
 		}
-		if *domain != "" {
-			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", *domain)
+		if cfg.Domain != "" {
+			fmt.Fprintf(os.Stderr, "Tunnel domain: %s (verifies query reaches server)\n", cfg.Domain)
 		} else {
 			fmt.Fprintf(os.Stderr, "WARNING: No --domain set. Finding generic DNS, not tunnel-compatible!\n")
 			fmt.Fprintf(os.Stderr, "         Use: --domain t.example.com for slipstream compatibility\n")
@@ -238,19 +186,19 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		if *progress {
+		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "\nInterrupted, stopping...\n")
 		}
 		cancel()
 	}()
 
 	// Create scanner
-	prog := NewProgress(totalIPs, *progress)
-	scanner := NewScanner(*workers, *timeout, 53, prog, *domain)
+	prog := NewProgress(totalIPs, cfg.Progress)
+	scanner := NewScanner(cfg.Workers, cfg.Timeout, 53, prog, cfg.Domain)
 
 	// Start progress ticker
 	var progressDone chan struct{}
-	if *progress {
+	if cfg.Progress {
 		progressDone = make(chan struct{})
 		go func() {
 			ticker := time.NewTicker(500 * time.Millisecond)
@@ -302,7 +250,7 @@ resultLoop:
 	}
 
 	// Print final stats
-	if *progress {
+	if cfg.Progress {
 		scanned, found, _, elapsed := prog.Stats()
 		fmt.Fprintf(os.Stderr, "\r                                                              \r")
 		fmt.Fprintf(os.Stderr, "Completed: %d IPs in %v\n", scanned, elapsed.Round(time.Millisecond))
@@ -313,8 +261,8 @@ resultLoop:
 	}
 
 	// Phase 2: Verify with slipstream-client if requested
-	if *verify != "" && len(workingDNS) > 0 {
-		if *progress {
+	if cfg.VerifyBinary != "" && len(workingDNS) > 0 {
+		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "\nVerifying %d candidates with slipstream-client...\n", len(workingDNS))
 		}
 
@@ -325,32 +273,32 @@ resultLoop:
 			// Check for interrupt
 			select {
 			case <-ctx.Done():
-				if *progress {
+				if cfg.Progress {
 					fmt.Fprintf(os.Stderr, "\nInterrupted during verification\n")
 				}
 				goto slipstreamDone
 			default:
 			}
 
-			if *progress {
+			if cfg.Progress {
 				fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 			}
 			start := time.Now()
-			if verifyWithSlipstream(*verify, *domain, ip, *timeout) {
+			if verifyWithSlipstream(cfg.VerifyBinary, cfg.Domain, ip, cfg.Timeout) {
 				elapsed := time.Since(start)
 				verified = append(verified, ip)
-				if *progress {
+				if cfg.Progress {
 					fmt.Fprintf(os.Stderr, "\033[32mOK (%.1fs)\033[0m\n", elapsed.Seconds())
 				}
 			} else {
-				if *progress {
+				if cfg.Progress {
 					fmt.Fprintf(os.Stderr, "FAIL\n")
 				}
 			}
 		}
 	slipstreamDone:
 
-		if *progress {
+		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "---\n")
 			fmt.Fprintf(os.Stderr, "Slipstream: %d/%d passed\n", len(verified), len(workingDNS))
 		}
@@ -359,12 +307,12 @@ resultLoop:
 
 	// Phase 3: Burst test to verify servers handle concurrent load
 	var burstResults []*BurstResult
-	if *domain != "" && len(workingDNS) > 0 {
+	if cfg.Domain != "" && len(workingDNS) > 0 {
 		total := len(workingDNS)
 
 		if total <= 5 {
 			// Sequential for small lists - nicer per-IP output
-			if *progress {
+			if cfg.Progress {
 				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates (%d queries, %d%% required)...\n",
 					total, BurstQueries, BurstMinSuccess)
 			}
@@ -373,22 +321,22 @@ resultLoop:
 			for i, ip := range workingDNS {
 				select {
 				case <-ctx.Done():
-					if *progress {
+					if cfg.Progress {
 						fmt.Fprintf(os.Stderr, "\nInterrupted during burst test\n")
 					}
 					goto burstDone
 				default:
 				}
 
-				if *progress {
+				if cfg.Progress {
 					fmt.Fprintf(os.Stderr, "[%*d/%d] %-15s  ", width, i+1, total, ip)
 				}
 
-				result := BurstTest(ctx, ip, *domain, 53, *timeout)
+				result := BurstTest(ctx, ip, cfg.Domain, 53, cfg.Timeout)
 
 				if result.Passed() {
 					burstResults = append(burstResults, result)
-					if *progress {
+					if cfg.Progress {
 						color := "\033[33m"
 						if result.SuccessRate() >= 85 {
 							color = "\033[32m"
@@ -397,7 +345,7 @@ resultLoop:
 							color, result.SuccessRate(), result.QPS(), result.P50().Round(time.Millisecond))
 					}
 				} else {
-					if *progress {
+					if cfg.Progress {
 						fmt.Fprintf(os.Stderr, "FAIL %.0f%%\n", result.SuccessRate())
 					}
 				}
@@ -405,15 +353,15 @@ resultLoop:
 		} else {
 			// Parallel for larger lists
 			burstWorkers := min(total, 10)
-			if *progress {
+			if cfg.Progress {
 				fmt.Fprintf(os.Stderr, "\nBurst testing %d candidates in parallel (%d workers)...\n",
 					total, burstWorkers)
 			}
 
-			burstProg := NewBurstProgress(total, *progress)
+			burstProg := NewBurstProgress(total, cfg.Progress)
 			var progressDone chan struct{}
 
-			if *progress {
+			if cfg.Progress {
 				progressDone = make(chan struct{})
 				go func() {
 					ticker := time.NewTicker(500 * time.Millisecond)
@@ -432,7 +380,7 @@ resultLoop:
 				}()
 			}
 
-			resultChan := ParallelBurstTest(ctx, workingDNS, *domain, 53, *timeout, burstWorkers)
+			resultChan := ParallelBurstTest(ctx, workingDNS, cfg.Domain, 53, cfg.Timeout, burstWorkers)
 			for result := range resultChan {
 				burstProg.Tested()
 				if result.Passed() {
@@ -452,7 +400,7 @@ resultLoop:
 			return burstResults[i].QPS() > burstResults[j].QPS()
 		})
 
-		if *progress {
+		if cfg.Progress {
 			fmt.Fprintf(os.Stderr, "---\n")
 			fmt.Fprintf(os.Stderr, "Burst test: %d/%d passed (sorted by throughput)\n", len(burstResults), len(workingDNS))
 			for _, r := range burstResults {
@@ -475,7 +423,7 @@ resultLoop:
 	scanned, _, _, elapsed := prog.Stats()
 
 	// Write results
-	if *jsonOutput {
+	if cfg.JSONOutput {
 		output := JSONOutput{
 			Servers: []JSONServer{},
 			Scan: JSONScan{
@@ -484,9 +432,9 @@ resultLoop:
 				DurationMs:   elapsed.Milliseconds(),
 			},
 		}
-		if *inputFile == "" {
-			output.Scan.Country = *country
-			output.Scan.Mode = *mode
+		if cfg.InputFile == "" {
+			output.Scan.Country = cfg.Country
+			output.Scan.Mode = cfg.Mode
 		}
 
 		// Build server list with stats if available
@@ -519,7 +467,7 @@ resultLoop:
 				for _, ip := range workingDNS {
 					fmt.Fprintln(outFile, ip)
 				}
-			} else if !*progress {
+			} else if !cfg.Progress {
 				for _, ip := range workingDNS {
 					fmt.Println(ip)
 				}
@@ -527,8 +475,8 @@ resultLoop:
 		}
 
 		// Print usage hint
-		if *progress && len(workingDNS) > 0 {
-			showDomain := *domain
+		if cfg.Progress && len(workingDNS) > 0 {
+			showDomain := cfg.Domain
 			if showDomain == "" {
 				showDomain = "<domain>"
 			}
