@@ -95,7 +95,6 @@ func (b *Benchmarker) Benchmark(ctx context.Context, ips []string) []*BenchmarkR
 	prog := NewProgress(len(ips), b.showProgress)
 
 	tickCtx, stopTick := context.WithCancel(ctx)
-	defer stopTick()
 	go b.tick(tickCtx, prog)
 
 	var results []*BenchmarkResult
@@ -109,6 +108,7 @@ func (b *Benchmarker) Benchmark(ctx context.Context, ips []string) []*BenchmarkR
 		return results[i].QPS() > results[j].QPS()
 	})
 
+	stopTick()
 	b.summary(results, len(ips))
 	return results
 }
@@ -126,7 +126,6 @@ func (b *Benchmarker) tick(ctx context.Context, prog *Progress) {
 			fmt.Fprintf(b.output, "\rBenchmarking: %d/%d tested, %d passed   ",
 				st.Processed, st.Total, st.Success)
 		case <-ctx.Done():
-			fmt.Fprint(b.output, "\r\033[K")
 			return
 		}
 	}
@@ -136,7 +135,8 @@ func (b *Benchmarker) summary(results []*BenchmarkResult, total int) {
 	if !b.showProgress || b.output == nil {
 		return
 	}
-	fmt.Fprintf(b.output, "Benchmark: %d/%d passed (sorted by throughput)\n", len(results), total)
+	fmt.Fprintf(b.output, "\r\033[1;32mBenchmark: %d/%d | Passed: %d | sorted by QPS\033[0m          \n", total, total, len(results))
+	fmt.Fprintln(b.output, "---")
 	for _, r := range results {
 		color := "\033[33m"
 		if r.SuccessRate() >= 85 {

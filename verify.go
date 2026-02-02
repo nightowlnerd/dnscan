@@ -45,13 +45,13 @@ func (v *SlipstreamVerifier) Verify(ctx context.Context, ips []string) []string 
 	prog := NewProgress(len(ips), v.showProgress)
 
 	tickCtx, stopTick := context.WithCancel(ctx)
-	defer stopTick()
 	go v.tick(tickCtx, prog)
 
 	var verified []string
 	for _, ip := range ips {
 		select {
 		case <-ctx.Done():
+			stopTick()
 			v.summary(prog, len(verified), len(ips))
 			return verified
 		default:
@@ -63,6 +63,7 @@ func (v *SlipstreamVerifier) Verify(ctx context.Context, ips []string) []string 
 		}
 	}
 
+	stopTick()
 	v.summary(prog, len(verified), len(ips))
 	return verified
 }
@@ -80,7 +81,6 @@ func (v *SlipstreamVerifier) tick(ctx context.Context, prog *Progress) {
 			fmt.Fprintf(v.output, "\rVerifying: %d/%d tested, %d passed   ",
 				st.Processed, st.Total, st.Success)
 		case <-ctx.Done():
-			fmt.Fprint(v.output, "\r\033[K")
 			return
 		}
 	}
@@ -90,7 +90,7 @@ func (v *SlipstreamVerifier) summary(prog *Progress, passed, total int) {
 	if !v.showProgress || v.output == nil {
 		return
 	}
-	fmt.Fprintf(v.output, "%s: %d/%d passed\n", v.Name(), passed, total)
+	fmt.Fprintf(v.output, "\r\033[1;32mVerify: %d/%d | Passed: %d | %s\033[0m          \n", total, total, passed, v.Name())
 }
 
 func (v *SlipstreamVerifier) testIP(ip string) bool {

@@ -52,7 +52,6 @@ func (s *Scanner) Scan(ctx context.Context, ips <-chan string) []string {
 	prog := NewProgress(s.total, s.showProgress)
 
 	tickCtx, stopTick := context.WithCancel(ctx)
-	defer stopTick()
 	go s.tick(tickCtx, prog)
 
 	var working []string
@@ -66,6 +65,7 @@ func (s *Scanner) Scan(ctx context.Context, ips <-chan string) []string {
 		}
 	}
 
+	stopTick()
 	s.summary(prog, suspicious)
 	return working
 }
@@ -85,7 +85,6 @@ func (s *Scanner) tick(ctx context.Context, prog *Progress) {
 			fmt.Fprintf(s.output, "\rScanned: %d/%d (%.1f%%) | Found: %d | %.0f IPs/sec   ",
 				st.Processed, st.Total, pct, st.Success, rate)
 		case <-ctx.Done():
-			fmt.Fprint(s.output, "\r\033[K")
 			return
 		}
 	}
@@ -96,8 +95,9 @@ func (s *Scanner) summary(prog *Progress, suspicious int) {
 		return
 	}
 	st := prog.Stats()
-	fmt.Fprintf(s.output, "Completed: %d IPs in %v\n", st.Processed, st.Elapsed.Round(time.Millisecond))
-	fmt.Fprintf(s.output, "Found: %d DNS candidates\n", st.Success)
+	rate := float64(st.Processed) / st.Elapsed.Seconds()
+	fmt.Fprintf(s.output, "\r\033[1;32mScan: %d/%d | Found: %d | %.0f IPs/sec | %v\033[0m          \n",
+		st.Processed, st.Total, st.Success, rate, st.Elapsed.Round(time.Millisecond))
 	if suspicious > 0 {
 		fmt.Fprintf(s.output, "\033[33mWarning: %d servers returned private IPs (possible DNS hijacking)\033[0m\n", suspicious)
 	}
