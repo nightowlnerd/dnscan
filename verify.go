@@ -7,8 +7,11 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
+
+const VerifyWorkers = 10
 
 type Verifier interface {
 	Verify(ctx context.Context, ips []string) []string
@@ -48,11 +51,22 @@ func (v *SlipstreamVerifier) Verify(ctx context.Context, ips []string) []string 
 	go v.tick(tickCtx, prog)
 
 	var verified []string
+	if len(ips) <= 5 {
+		verified = v.sequential(ctx, ips, prog)
+	} else {
+		verified = v.parallel(ctx, ips, prog)
+	}
+
+	stopTick()
+	v.summary(prog, len(verified), len(ips))
+	return verified
+}
+
+func (v *SlipstreamVerifier) sequential(ctx context.Context, ips []string, prog *Progress) []string {
+	var verified []string
 	for _, ip := range ips {
 		select {
 		case <-ctx.Done():
-			stopTick()
-			v.summary(prog, len(verified), len(ips))
 			return verified
 		default:
 		}
@@ -62,9 +76,63 @@ func (v *SlipstreamVerifier) Verify(ctx context.Context, ips []string) []string 
 			verified = append(verified, ip)
 		}
 	}
+	return verified
+}
 
-	stopTick()
-	v.summary(prog, len(verified), len(ips))
+func (v *SlipstreamVerifier) parallel(ctx context.Context, ips []string, prog *Progress) []string {
+	workers := min(len(ips), VerifyWorkers)
+
+	ipChan := make(chan string, len(ips))
+	resultChan := make(chan string, workers)
+
+	go func() {
+		defer close(ipChan)
+		for _, ip := range ips {
+			select {
+			case ipChan <- ip:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case ip, ok := <-ipChan:
+					if !ok {
+						return
+					}
+					passed := v.testIP(ip)
+					prog.Increment()
+					if passed {
+						prog.Success()
+						select {
+						case resultChan <- ip:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	var verified []string
+	for ip := range resultChan {
+		verified = append(verified, ip)
+	}
 	return verified
 }
 
