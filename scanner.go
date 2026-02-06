@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
 )
+
+const ScanRetries = 1
 
 const probeDomain = "google.com"
 
@@ -154,9 +157,18 @@ func (s *Scanner) probe(ip string) ScanResult {
 	m.RecursionDesired = true
 
 	addr := fmt.Sprintf("%s:%d", ip, s.port)
-	reply, rtt, err := client.Exchange(m, addr)
-	if err != nil {
-		return ScanResult{IP: ip, Working: false, Error: err}
+
+	var reply *dns.Msg
+	var rtt time.Duration
+	var err error
+	for attempt := 0; attempt <= ScanRetries; attempt++ {
+		reply, rtt, err = client.Exchange(m, addr)
+		if err == nil {
+			break
+		}
+		if !isTimeout(err) || attempt == ScanRetries {
+			return ScanResult{IP: ip, Working: false, Error: err}
+		}
 	}
 
 	if reply == nil || reply.Rcode != dns.RcodeSuccess || len(reply.Answer) == 0 {
@@ -179,18 +191,33 @@ func (s *Scanner) probe(ip string) ScanResult {
 		m2.RecursionDesired = true
 		m2.SetEdns0(EDNSBufferSize, false)
 
-		reply2, rtt2, err := client.Exchange(m2, addr)
-		if err != nil {
-			return ScanResult{IP: ip, Working: false, Error: err}
+		for attempt := 0; attempt <= ScanRetries; attempt++ {
+			reply, rtt, err = client.Exchange(m2, addr)
+			if err == nil {
+				break
+			}
+			if !isTimeout(err) || attempt == ScanRetries {
+				return ScanResult{IP: ip, Working: false, Error: err}
+			}
 		}
 
-		if reply2 != nil {
-			return ScanResult{IP: ip, Working: true, RTT: rtt2}
+		if reply != nil {
+			return ScanResult{IP: ip, Working: true, RTT: rtt}
 		}
 		return ScanResult{IP: ip, Working: false}
 	}
 
 	return ScanResult{IP: ip, Working: true, RTT: rtt}
+}
+
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+	return strings.Contains(err.Error(), "i/o timeout")
 }
 
 var privateRanges = []string{
