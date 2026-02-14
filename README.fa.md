@@ -17,7 +17,7 @@
 
 ## کاربرد
 
-در زمان محدودیت‌های اینترنتی، تونل‌های DNS (مثل [slipstream](https://github.com/Mygod/slipstream-rust)) می‌توانند با کدگذاری ترافیک در کوئری‌های DNS، محدودیت‌ها را دور بزنند. این ابزار سرورهای DNS را پیدا می‌کند که:
+در زمان محدودیت‌های اینترنتی، تونل‌های DNS (مثل [slipstream](https://github.com/nightowlnerd/slipstream-rust)) می‌توانند با کدگذاری ترافیک در کوئری‌های DNS، محدودیت‌ها را دور بزنند. این ابزار سرورهای DNS را پیدا می‌کند که:
 1. کوئری‌های بازگشتی را قبول کنند
 2. بتوانند به سرور DNS شما برسند
 3. واقعاً با کلاینت تونل شما کار کنند
@@ -117,7 +117,7 @@ Warning: 5 servers returned private IPs (possible DNS hijacking)
 ./dnscan --domain t.example.com --mode list --verify ./slipstream-client
 ```
 
-دریافت slipstream-client از: https://github.com/AliRezaBeigy/slipstream-rust-deploy/releases
+دریافت slipstream-client از: https://github.com/nightowlnerd/slipstream-rust/releases
 
 خروجی زمان اتصال هر سرور را نشان می‌دهد:
 ```
@@ -163,11 +163,13 @@ data/
 
 ```bash
 # روی سرور شما
-docker run -d --network host bashsiz/slipstream-rust slipstream-server \
+slipstream-server \
   --dns-listen-port 53 \
   --domain t.example.com \
   --target-address 127.0.0.1:22
 ```
+
+دریافت باینری‌های slipstream از: https://github.com/nightowlnerd/slipstream-rust/releases
 
 برای تست بدون تونل (فقط چک کردن دسترسی DNS):
 

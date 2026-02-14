@@ -18,7 +18,7 @@ Find working DNS servers for DNS tunnels during internet blackouts. Scans countr
 
 ## Use Case
 
-During internet restrictions, DNS tunnels (like [slipstream](https://github.com/Mygod/slipstream-rust)) can bypass blocks by encoding traffic in DNS queries. This tool finds DNS servers that:
+During internet restrictions, DNS tunnels (like [slipstream](https://github.com/nightowlnerd/slipstream-rust)) can bypass blocks by encoding traffic in DNS queries. This tool finds DNS servers that:
 1. Accept recursive queries
 2. Can reach your authoritative DNS server
 3. Actually work with your tunnel client
@@ -125,7 +125,7 @@ Output shows connection time for each server:
 [3/5] 217.218.127.127  FAIL
 ```
 
-Get slipstream-client from: https://github.com/AliRezaBeigy/slipstream-rust-deploy/releases
+Get slipstream-client from: https://github.com/nightowlnerd/slipstream-rust/releases
 
 ## Data Files
 
@@ -163,11 +163,13 @@ Before scanning, your tunnel server must be running. The scanner sends DNS queri
 For slipstream:
 ```bash
 # On your server
-docker run -d --network host bashsiz/slipstream-rust slipstream-server \
+slipstream-server \
   --dns-listen-port 53 \
   --domain t.example.com \
   --target-address 127.0.0.1:22
 ```
+
+Get slipstream binaries from: https://github.com/nightowlnerd/slipstream-rust/releases
 
 For testing without a tunnel (just check DNS reachability):
 ```bash
